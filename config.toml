@@ -1,0 +1,35 @@
+# Default configuration for the boardgame recommender POC
+
+[paths]
+raw_data = "data/raw"
+processed_features = "data/processed/boardgames.parquet"
+artifacts = "data/embeddings"
+
+[features]
+text_columns = [
+    "text_blob",
+    "mechanics_tags",
+    "categories_tags",
+    "themes_tags",
+]
+numeric_columns = [
+    "avg_rating",
+    "min_players",
+    "max_players",
+    "playing_time_minutes",
+    "year_published",
+    "num_user_ratings",
+    "complexity",
+]
+
+[logging]
+level = "INFO"
+
+[preprocessing]
+top_n = 2000
+
+[svd]
+n_components = 64
+random_state = 42
+min_df = 3
+max_features = 20000

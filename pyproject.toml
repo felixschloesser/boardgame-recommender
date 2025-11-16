@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "boardgame-recommender"
+version = "0.1.0"
+description = "Proof of concept of an embedding-based boardgame recommender."
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    {name = "Felix Schlösser", email = "felixfranzjohannes.schloesser@student.kuleuven.be"}
+]
+
+dependencies = [
+    "polars",
+    "pyarrow",
+    "scikit-learn",
+    "joblib",
+    "numpy",
+    "scipy",
+    "tqdm",
+]
+
+
+[project.dev-dependencies]
+dev = [
+    "pydantic",
+    "ruff",
+    "mypy"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+strict_optional = true
+ignore_missing_imports = false
+namespace_packages = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = [
+    "tomllib",
+    "tqdm.*",
+    "joblib",
+    "scipy.*",
+    "sklearn.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+markers = [
+    "end_to_end: marks end-to-end pipeline tests"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/boardgame_recommender"]

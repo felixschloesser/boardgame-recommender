@@ -1,0 +1,21 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Environments
+.venv/
+.env
+
+# Data artifacts
+data/raw/*
+data/processed/*
+data/embeddings/*
+!data/**/.gitkeep
+
+# Misc
+.DS_Store
