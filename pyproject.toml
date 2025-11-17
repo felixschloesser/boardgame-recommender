@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 
-[project.dev-dependencies]
+[project.optional-dependencies]
 dev = [
     "pydantic",
     "ruff",

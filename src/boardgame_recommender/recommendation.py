@@ -148,10 +148,14 @@ def recommend_games(
     liked_matrix = liked_frame.select(embedding_columns).to_numpy()
     preference_vectors = _build_preference_vectors(liked_matrix, config)
 
+    playing_time_filter = (
+        pl.col("playing_time_minutes").is_null()
+        | (pl.col("playing_time_minutes") <= available_time_minutes)
+    )
     filtered = vectors.filter(
         (pl.col("min_players") <= player_count)
         & (pl.col("max_players") >= player_count)
-        & (pl.col("playing_time_minutes") <= available_time_minutes)
+        & playing_time_filter
         & (~pl.col("name").is_in(liked_games))
     )
     if filtered.is_empty():

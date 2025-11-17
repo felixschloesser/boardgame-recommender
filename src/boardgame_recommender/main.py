@@ -113,14 +113,11 @@ def find_latest_run_identifier(path: Path) -> str:
 def _preprocess(config: Config, args: argparse.Namespace) -> None:
     domain_stopwords = load_stopwords(config.paths.domain_stopwords_file)
     english_stopwords = load_stopwords(config.paths.english_stopwords_file)
-    stopwords = {
-        "domain": domain_stopwords,
-        "english": english_stopwords,
-    }
 
     features = preprocess_data(
         directory=config.paths.raw_data_directory,
-        stopwords=stopwords,
+        english_stopwords=english_stopwords,
+        domain_stopwords=domain_stopwords,
         config=config.preprocessing,
     )
 

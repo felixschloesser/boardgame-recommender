@@ -53,12 +53,14 @@ I stopped working on the supervised reranker after uncovering a few conceptual i
 ```
 ├─ data/               # Raw CSVs, processed parquet feature stores and learned embeddings
 ├─ src/boardgame_recommender/
-│   ├─ cli.py          # python -m boardgame_recommender entrypoint
+│   ├─ __main__.py     # allows `python -m boardgame_recommender`
+│   ├─ main.py         # CLI wiring + commands
 │   ├─ config.py       # Strongly typed TOML loader
 │   ├─ pipelines/      # Preprocessing + training stages (embedding-based)
 │   └─ recommendation.py
-└─ tests/              # Pytest suites + fixtures (incl. end-to-end test)
 ```
+
+> Pytest scaffolding is still on the roadmap; the `tests/` package referenced earlier has not been created yet.
 
 ---
 
@@ -85,14 +87,19 @@ data/raw/
 
 ### 2. Preprocess and curate dataset
 
-Configure defaults via `config.toml`:
+Configure defaults via `config.toml` (excerpt):
 
 ```toml
 [logging]
 level = "INFO"  # change to "DEBUG" for verbose tracing
 
 [preprocessing]
-top_n = 2000
+cutoff_metric = "num_user_ratings"
+cutoff_quantile = 0.40
+
+[recommendation]
+preferences_vectorization_strategy = "mixture_of_centroids"
+num_centroids = 3
 ```
 
 Run preprocessing with:
@@ -109,9 +116,8 @@ python -m boardgame_recommender train
 
 This generates:
 
-* a semantic embedding catalog
-* a serialized model bundle
-* run metadata under `models/<run_identifier>/`
+* a semantic embedding model (`vectors.parquet`)
+* run metadata under `embeddings/<run_identifier>/`
 
 ### 4. Request recommendations
 

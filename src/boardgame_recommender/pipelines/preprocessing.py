@@ -109,26 +109,22 @@ def _load_tag_table(directory: Path, filename: str, alias: str) -> pl.DataFrame:
 
 
 def _prepare_stopwords(
-    stopwords: set[str] | dict[str, set[str]],
+    english_stopwords: set[str],
+    domain_stopwords: set[str],
     token_config: TokenizationConfig,
 ) -> set[str]:
     def _normalize(values: set[str]) -> set[str]:
         return {token.lower() for token in values}
 
-    if isinstance(stopwords, dict):
-        english = _normalize(stopwords.get("english", set()))
-        domain = _normalize(stopwords.get("domain", set()))
-        combined = english | domain
-    else:
-        combined = _normalize(stopwords)
-        english = set()
-        domain = set()
+    english = _normalize(english_stopwords)
+    domain = _normalize(domain_stopwords)
+    combined = english | domain
 
     active: set[str] = set()
     if token_config.remove_english_stopwords:
-        active |= english or combined
+        active |= english
     if token_config.remove_domain_stopwords:
-        active |= domain or combined
+        active |= domain
     if not active:
         active = combined
 
@@ -294,7 +290,8 @@ def _clean_textual_columns(
 
 def preprocess_data(
     directory: Path,
-    stopwords: set[str],
+    english_stopwords: set[str],
+    domain_stopwords: set[str],
     config: PreprocessingConfig,
 ) -> pl.DataFrame:
     """
@@ -333,7 +330,11 @@ def preprocess_data(
 
     frame = _apply_cutoff(frame, config)
 
-    final_stopwords = _prepare_stopwords(stopwords, config.tokenization)
+    final_stopwords = _prepare_stopwords(
+        english_stopwords,
+        domain_stopwords,
+        config.tokenization,
+    )
     frame = _clean_textual_columns(frame, final_stopwords, config)
     frame = _append_numeric_features(frame, config)
 
