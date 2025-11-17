@@ -1,185 +1,156 @@
-# Boardgame Recommender POC
+# Boardgame Recommender
 
-This project is a **proof of concept for an embedding-based boardgame recommender**.
-It explores data wrangling, feature engineering and dimensionality reduction applied to BoardGameGeek metadata.
+An end-to-end, metadata-only recommender built on BoardGameGeek exports. The CLI
+preprocesses raw CSVs, learns a semantic “taste” embedding from curated
+boardgame features, and returns context-aware suggestions for players who know
+what they like but not what to try next.
 
-The current system learns **semantic item embeddings from item metadata** (mechanics, categories, descriptions, complexity, etc...) and performs a similarity search to recommend games similar to the ones a user already likes.
-Contextual filters (player count, available time) are applied directly on interpretable metadata.
+## What’s implemented
 
+- **Dataset curation:** Polars pipelines load `games.csv`, `mechanics.csv`,
+  `subcategories.csv`, and `themes.csv`, normalize schemas, and merge auxiliary
+  tags.
+- **Domain-specific filtering:** configurable guardrails discard stale, obscure,
+  or extremely long titles (rating cutoff, popularity quantile, player/time
+  bounds).
+- **Feature engineering:** description text, mechanics, categories/subcategories,
+  and numeric stats (ratings, player counts, complexity, etc.) are tokenized
+  with synonym unification, boardgame stopwords, and bi-grams.
+- **Taste embedding:** weighted TF-IDF + numeric blocks feed a TruncatedSVD model
+  (SciPy + scikit-learn) that produces dense `taste_*` columns stored alongside
+  interpretable metadata in `vectors.parquet`.
+- **Recommendation engine:** liked games are clustered into dynamic “taste
+  groups” (KMeans) before cosine similarity scoring, so multiple distinct
+  preferences are respected. Candidates are filtered by player count and
+  available time before ranking.
+- **Workspace tooling:** CLI commands orchestrate preprocessing, training,
+  inference, and cleanup. Rich progress logging uses `tqdm` and Python’s logging
+  module.
 
-### Embedding Recommender (implemented)
-
-* Uses **only item metadata**; no user rating matrix.
-* Creates feature matrices from curated boardgame attributes.
-* Applies **Truncated SVD** to obtain low-dimensional semantic embeddings.
-* Scores candidates with **k-nearest-neighbor cosine similarity** against each liked title (best-match ranking).
-* Returns recommendations satisfying contextual constraints:
-  * min players
-  * available time
-
-
-## Possible Improvements
-
-### RandomForest Reranker (not implemented)
-I stopped working on the supervised reranker after uncovering a few conceptual issues in my approach.
-
-
-### Latent-Factor Collaborative Filtering
-
-* Build a **user–item rating matrix** from BGG ratings.
-* Apply **SVD** or **NMF** to discover hidden preference dimensions.
-* Use resulting latent embeddings for collaborative filtering.
-* Combine with learned embeddings for hybrid recommendations.
-
-### Model-Based Explainability
-
-* Use **SHAP** for post-hoc feature importance explanations that justify the RandomForest recommendations.
-
-
----
-
-## Tech Stack
-
-* Python 3.13+
-* **Polars** for data wrangling and feature stores.
-* **Scikit-Learn** for TruncatedSVD and classical ML tooling.
-* **argparse** + **tqdm** for ergonomic CLI feedback.
-* (Future) SHAP for interpretability of supervised models.
-
----
-
-## Project Layout
+## Repository layout
 
 ```
-├─ data/               # Raw CSVs, processed parquet feature stores and learned embeddings
+├─ config.toml                # Default configuration (paths + hyper-parameters)
+├─ data/
+│   ├─ raw/                   # Place BGG CSV exports here
+│   ├─ processed/             # Generated features + quality reports
+│   └─ embeddings/            # One directory per trained run
 ├─ src/boardgame_recommender/
-│   ├─ __main__.py     # allows `python -m boardgame_recommender`
-│   ├─ main.py         # CLI wiring + commands
-│   ├─ config.py       # Strongly typed TOML loader
-│   ├─ pipelines/      # Preprocessing + training stages (embedding-based)
-│   └─ recommend.py
+│   ├─ pipelines/             # preprocessing.py + training.py
+│   ├─ recommend.py           # similarity search + taste clustering
+│   ├─ main.py                # CLI wiring (`python -m boardgame_recommender`)
+│   └─ config.py              # Strongly typed TOML loader (Pydantic v2)
+└─ tests/                     # unit + end-to-end coverage
 ```
 
-> Pytest scaffolding is still on the roadmap; the `tests/` package referenced earlier has not been created yet.
-
----
-
-## Setup
+## Getting started
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
-pip install -e .[dev]
+pip install -e .          # library + CLI
+pip install -e .[dev]     # tooling: pytest, mypy, ruff
 ```
 
----
+This project targets Python 3.13+. Dependencies are listed in `pyproject.toml`.
 
-## Example Workflow
+## Data requirements
 
-### 1. Provide BoardGameGeek raw data
+1. Download the BoardGameGeek dump (e.g. from
+   [Kaggle](https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek/data)).
+2. Copy at least the following CSVs into `data/raw/`:
+   - `games.csv`
+   - `mechanics.csv`
+   - `subcategories.csv`
+   - `themes.csv`
+3. Customize vocabulary helpers if desired:
+   - `data/stopwords.txt` — domain stopwords removed from free-text columns.
+   - `data/synonyms.toml` — canonical phrases (e.g. “worker-placement”) mapped
+     to user-visible variants.
 
-Place [BGG CSV exports](https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek/data) (`games.csv`, `mechanics.csv`, etc.) into:
+The preprocessing stage fails fast if any required files or columns are missing.
 
-```
-data/raw/
-```
+## Configuration overview (`config.toml`)
 
-### 2. Preprocess and curate dataset
+| Section | Purpose |
+| --- | --- |
+| `[paths]` | Absolute/relative roots for raw data, processed features, embeddings, and auxiliary word lists. |
+| `[preprocessing.filters]` | Guardrails that narrow the catalog (publication year, rating quantile, player count, max play time). |
+| `[preprocessing.features]` | Select which columns become `text_*`, `cat_*`, or `num_*` features plus per-column weights. |
+| `[preprocessing.tokenization]` | Toggle synonym unification, boardgame stopwords, and the n-gram range used for descriptions. |
+| `[training.text_vectorization]` | TF-IDF knobs: min occurrences, max document frequency, and heuristics for long descriptions. |
+| `[training.taste_model]` | Embedding dimensionality + optional normalization of taste vectors. |
+| `[recommendation]` | Scoring aggregation mode (`max` vs `mean`) and how many taste centroids to form per user query. |
 
-Configure defaults via `config.toml` (excerpt):
+Paths are resolved relative to the config file, so alternative environments can
+ship their own TOML file and pass `--config path/to/config.toml`.
 
-```toml
-[paths]
-english_stopwords_file = "data/stopwords/english.txt"
-domain_stopwords_file = "data/stopwords/boardgame.txt"
-raw_data_directory = "data/raw"
-processed_features_directory = "data/processed"
-embeddings_directory = "data/embeddings"
+## CLI workflow
 
-[logging]
-level = "INFO"  # change to "DEBUG" for verbose tracing
+1. **Preprocess raw CSVs**
 
-[preprocessing]
-cutoff_metric = "num_user_ratings"
-cutoff_quantile = 0.40
+   ```bash
+   python -m boardgame_recommender preprocess
+   ```
 
-[preprocessing.domain_filters]
-enabled = true
-min_year = 1995
-max_year = 2020
-max_min_players = 7
-long_play_minutes = 240
-long_play_max_minutes = 480
-long_play_min_ratings = 1000
+   Outputs:
+   - `data/processed/boardgames.parquet`
+   - `data/processed/data_quality.json` (rows kept, filter counts, timestamp)
 
-[preprocessing.outlier_filtering]
-enabled = false                      # optional: opt-in IQR trimming
-columns = ["avg_rating", "min_players", "max_players", "playing_time_minutes"]
-iqr_multiplier = 1.5                 # adjust whisker sensitivity when enabled
+2. **Train the taste embedding**
 
-[recommendation]
-preferences_vectorization_strategy = "mixture_of_centroids"
-num_centroids = 3
-```
+   ```bash
+   python -m boardgame_recommender train
+   ```
 
-Preprocessing always runs two guardrails inspired by the [EDA notebook](https://github.com/richengo/Board-Games-Recommender/blob/main/code/01a_Board_Games_EDA_Cleaning.ipynb):
+   Creates `data/embeddings/<run_id>/` containing `vectors.parquet` + `metadata.json`.
 
-- `[preprocessing.domain_filters]` keeps modern titles (1995–2020 by default), trims niche entries that require more than seven minimum players, and only allows extremely long games (4–8 hours) when they have at least 1k ratings. Tweak or disable this block to widen the candidate pool.
-- A light numeric sanity pass enforces hard bounds on the same numeric features (e.g., `min_players` must be between 1 and 20, play time must be < 24h).
+3. **Generate recommendations**
 
-Set `[preprocessing.outlier_filtering].enabled = true` only if you want an additional IQR-based trim for the listed columns.
+   ```bash
+   python -m boardgame_recommender recommend \
+       --liked "Risk" "Catan" "Carcassonne" \
+       --players 2 \
+       --time 40 \
+       --amount 8
+   ```
 
-Run preprocessing with:
+   - `--run` lets you pick a specific embedding directory; when omitted, the
+     latest completed run is used.
+   - `--players` and `--time` define contextual filters applied before scoring.
+
+4. **Clean generated artifacts** (optional)
+
+   ```bash
+   python -m boardgame_recommender clean --force
+   ```
+
+   Removes `data/processed/` and `data/embeddings/` so you can re-ingest from scratch.
+
+All commands accept `-v/--verbose` (repeat for DEBUG logging) and `-c/--config`
+to point at a custom TOML file.
+
+## Development & testing
+
+- Run the entire suite: `pytest`
+- Fast unit tests only: `pytest -m "not end_to_end"`
+- Pipeline sanity check: `pytest -m end_to_end`
+- Static analysis:
+  - `ruff check src tests`
+  - `mypy --explicit-package-bases src/boardgame_recommender`
+
+Consider installing `pre-commit` hooks so linting, typing, and tests run before
+each commit:
 
 ```bash
-python -m boardgame_recommender preprocess
-```
-
-This produces the curated feature store (`data/processed/boardgames.parquet`) and a
-`data/processed/data_quality.json` snapshot that captures null-counts, numeric
-ranges and duplicate tracking for auditing.
-
-### 3. Train the embedding model
-
-```bash
-python -m boardgame_recommender train
-```
-
-This generates:
-
-* a semantic embedding model (`vectors.parquet`)
-* run metadata under `embeddings/<run_identifier>/`
-
-### 4. Request recommendations
-
-```bash
-python -m boardgame_recommender recommend \
-    --liked "Risk" "Catan" "Carcassonne" \
-    --players 2 \
-    --time 40
-```
-
-### 5. Clean workspace (optional)
-
-```bash
-python -m boardgame_recommender clean
-```
-
-## Development Workflow
-
-Install dev dependencies and git hooks to guarantee linting, typing, and tests run before every commit:
-
-```bash
-pip install -e .[dev] pre-commit
+pip install pre-commit
 pre-commit install
 ```
 
-The configured hooks execute `ruff`, `mypy --explicit-package-bases src/boardgame_recommender`, and `pytest`. Use `SKIP=pytest git commit ...` if you need to bypass the full suite temporarily (e.g., when offline), but re-run locally before pushing.
+## Future directions
 
-To focus on fast unit tests vs. heavier integration runs:
+The current focus is a robust metadata-only system. Potential future work:
 
-```bash
-pytest -m "not end_to_end"   # unit tests
-pytest -m "end_to_end"       # pipeline/integration tests
-```
+- ingesting BoardGameGeek rating matrices for collaborative filtering
+- hybrid rerankers that combine latent signals with interpretable features
+- richer explainability tooling (e.g. SHAP summaries of feature impact)
