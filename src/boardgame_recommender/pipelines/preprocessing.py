@@ -5,8 +5,6 @@ from typing import Iterable, Sequence, cast
 
 import polars as pl
 
-from boardgame_recommender.config import Config
-
 logger = logging.getLogger(__name__)
 
 _SCALED_SUFFIX = "_scaled"
@@ -141,7 +139,9 @@ def _extract_categories_from_flags(
     """Convert legacy Cat:* indicator columns into sorted category strings."""
 
     category_columns = [
-        column_name for column_name in data_frame.columns if column_name.startswith("Cat:")
+        column_name
+        for column_name in data_frame.columns
+        if column_name.startswith("Cat:")
     ]
     if not category_columns:
         return None, []
@@ -168,7 +168,7 @@ def preprocess_data(
     raw_data_directory_override: Path | None = None,
     output_path_override: Path | None = None,
     top_record_limit: int | None = None,
-) -> Path:
+) -> DataFrame:
     """Clean raw CSV exports and emit a feature store parquet file."""
 
     effective_top_record_limit = (
@@ -246,9 +246,7 @@ def preprocess_data(
             subcategory_tags_frame, on="bgg_id", how="left"
         )
     if theme_tags_frame is not None:
-        enriched_frame = enriched_frame.join(
-            theme_tags_frame, on="bgg_id", how="left"
-        )
+        enriched_frame = enriched_frame.join(theme_tags_frame, on="bgg_id", how="left")
 
     logger.info(
         "Deriving playing time and ensuring mechanics column exists for downstream joins"
@@ -285,9 +283,7 @@ def preprocess_data(
     textual_feature_columns = ["description", "mechanics", "categories"]
     logger.info("Building composite text blob from %s", textual_feature_columns)
     enriched_frame = enriched_frame.with_columns(
-        _combine_text(
-            textual_feature_columns, target_alias="text_blob", separator=" "
-        ),
+        _combine_text(textual_feature_columns, target_alias="text_blob", separator=" "),
     )
 
     tag_column_mapping = {
@@ -332,9 +328,9 @@ def preprocess_data(
             "Restricting dataset to the top %d titles by number of user ratings",
             effective_top_record_limit,
         )
-        enriched_frame = enriched_frame.sort(
-            "num_user_ratings", descending=True
-        ).head(effective_top_record_limit)
+        enriched_frame = enriched_frame.sort("num_user_ratings", descending=True).head(
+            effective_top_record_limit
+        )
 
     if configuration.features.numeric_columns:
         logger.info(
@@ -353,7 +349,6 @@ def preprocess_data(
             sample_rows,
         )
 
-    enriched_frame.write_parquet(output_path)
     logger.info(
         "Finished preprocessing -> %s (rows=%d, columns=%d)",
         output_path,

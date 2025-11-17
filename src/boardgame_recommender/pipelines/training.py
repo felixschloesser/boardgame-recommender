@@ -49,7 +49,9 @@ def _build_text_series(
         [pl.col(column_name).fill_null("").cast(str) for column_name in column_names]
     )
     concatenated_frame = subset_frame.select(
-        pl.concat_str([pl.col(column) for column in subset_frame.columns], separator=" ")
+        pl.concat_str(
+            [pl.col(column) for column in subset_frame.columns], separator=" "
+        )
         .str.replace(r"\s+", " ")
         .str.strip_chars()
         .alias("text_blob")
@@ -138,9 +140,7 @@ def _calculate_recall_at_top_k(
             top_indices = np.argpartition(similarity_scores, -top_result_count)[
                 -top_result_count:
             ]
-            top_indices = top_indices[
-                np.argsort(similarity_scores[top_indices])[::-1]
-            ]
+            top_indices = top_indices[np.argsort(similarity_scores[top_indices])[::-1]]
 
         retrieved_indices = set(top_indices[:top_result_count])
         matching = retrieved_indices.intersection(positive_neighbors)
@@ -170,8 +170,12 @@ def train(
 ) -> TrainingArtifacts:
     """Build TF-IDF + SVD embeddings and persist embedding."""
 
-    processed_path = Path(processed_dataset_path or configuration.paths.processed_features)
-    output_directory = Path(output_directory_override or configuration.paths.models_directory)
+    processed_path = Path(
+        processed_dataset_path or configuration.paths.processed_features
+    )
+    output_directory = Path(
+        output_directory_override or configuration.paths.models_directory
+    )
     output_directory.mkdir(parents=True, exist_ok=True)
 
     logger.info("Loading processed dataset from %s", processed_path)
@@ -233,9 +237,7 @@ def train(
         )
         numeric_feature_array = np.nan_to_num(numeric_feature_array, nan=0.0)
         numeric_feature_matrix = sparse.csr_matrix(numeric_feature_array)
-        combined_feature_matrix = sparse.hstack(
-            [text_matrix, numeric_feature_matrix]
-        )
+        combined_feature_matrix = sparse.hstack([text_matrix, numeric_feature_matrix])
 
     embedding_matrix = singular_value_decomposition_model.fit_transform(
         combined_feature_matrix
@@ -304,7 +306,6 @@ def train(
     }
     if recall_metrics is not None:
         metadata_payload["evaluation"] = {"recall_at_10": recall_metrics}
-    metadata_path.write_text(json.dumps(metadata_payload, indent=2), encoding="utf-8")
 
     _ensure_latest_symlink(run_directory)
     progress_tracker.update(1)

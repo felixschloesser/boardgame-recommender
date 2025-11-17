@@ -1,35 +1,78 @@
-# Default configuration for the boardgame recommender POC
-
-[paths]
-raw_data = "data/raw"
-processed_features = "data/processed/boardgames.parquet"
-artifacts = "data/embeddings"
-
-[features]
-text_columns = [
-    "text_blob",
-    "mechanics_tags",
-    "categories_tags",
-    "themes_tags",
-]
-numeric_columns = [
-    "avg_rating",
-    "min_players",
-    "max_players",
-    "playing_time_minutes",
-    "year_published",
-    "num_user_ratings",
-    "complexity",
-]
+[random]
+seed = 42
 
 [logging]
 level = "INFO"
 
-[preprocessing]
-top_n = 2000
+[paths]
+raw_data_directory = "data/raw"
+english_stopwords_file = "data/stopwords/english.txt"
+domain_stopwords_file = "data/stopwords/boardgames.txt"
+processed_features_file = "data/processed/boardgames.parquet"
+embeddings_directory = "data/embeddings"
 
-[svd]
-n_components = 64
-random_state = 42
-min_df = 3
+
+[preprocessing]
+cutoff_metric = "num_user_ratings"
+cutoff_quantile = 0.10
+
+
+
+[preprocessing.features]
+text.columns = [
+    "description",
+]
+
+categorical.columns = [
+    "mechanics",
+    "categories",
+    "themes",
+]
+
+[preprocessing.features.numeric.normal]
+# Including the rating here may cause the recommender to trivially recommend the highest rated games.
+columns = ["avg_rating", "min_players", "max_players", "complexity"]
+normalization_strategy = "min-max"
+
+[preprocessing.numeric.heavy_tail]
+columns = ["num_user_ratings", "year_published", "playing_time_minutes"]
+normalization_strategy = "robust"
+
+[preprocessing.features.weights]
+description = 1.0
+mechanics = 0.8
+categories = 0.8
+themes = 0.6
+numeric = 0.7
+
+[preprocessing.tokenization]
+vocabulary_deduplication = true
+remove_english_stopwords = true
+allowed_stopwords = ["not", "no", "without"] # Preserve negations
+remove_domain_stopwords = true
+ngram_range = [1, 2]
+
+
+[training]
+show_progress = true
+
+[training.svd]
+tag_vectorization_strategy = "multi-hot"
+text_vectorization_strategy = "tf-idf"
+latent_dimension_strategy = "fixed"
+latent_dimensions = 300
+
+normalization_strategy = "l2"
+iterations = 10
+
+[training.tf-idf]
+min_document_occurences = 3
+max_document_frequency = 0.90
 max_features = 20000
+normalization_strategy = "l2"
+sublinear = true
+
+[recommendation]
+preferences_vectorization_strategy = "mixture_of_centroids" # model diverse tastes
+num_centroids = 3
+min_cluster_size = 2

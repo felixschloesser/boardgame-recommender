@@ -1,110 +1,179 @@
-from dataclasses import dataclass
-from pathlib import Path
+# config.py
 
+from pathlib import Path
+from typing import List, Tuple
+from pydantic import BaseModel, Field, model_validator
 import tomllib
 
 
-@dataclass
-class PathsConfig:
-    raw_data: Path
-    processed_features: Path
-    models_directory: Path
+# --------------------------------------
+# PATH CONFIG
+# --------------------------------------
 
 
-@dataclass
-class FeaturesConfig:
-    text_columns: list[str]
-    numeric_columns: list[str]
+class PathsConfig(BaseModel):
+    raw_data_directory: Path
+    domain_stopwords_file: Path
+    processed_features_file: Path
+    embeddings_directory: Path
 
 
-@dataclass
-class LoggingConfig:
+# --------------------------------------
+# FEATURES CONFIG
+# --------------------------------------
+
+
+class TextFeatureConfig(BaseModel):
+    columns: List[str]
+
+
+class CategoricalFeatureConfig(BaseModel):
+    columns: List[str]
+
+
+class NormalNumericFeatureConfig(BaseModel):
+    columns: List[str]
+    normalization_strategy: str
+
+
+class HeavyTailedNumericFeatureConfig(BaseModel):
+    columns: List[str]
+    normalization_strategy: str
+
+
+class NumericFeatureConfig(BaseModel):
+    normal: NormalNumericFeatureConfig
+    heavy_tail: HeavyTailedNumericFeatureConfig
+
+
+class FeatureWeightsConfig(BaseModel):
+    description: float
+    mechanics: float
+    categories: float
+    themes: float
+    numeric: float
+
+
+class FeaturesConfig(BaseModel):
+    text: TextFeatureConfig
+    categorical: CategoricalFeatureConfig
+    numeric: NumericFeatureConfig
+    weights: FeatureWeightsConfig
+
+
+# --------------------------------------
+# TOKENIZATION
+# --------------------------------------
+
+
+class TokenizationConfig(BaseModel):
+    vocabulary_deduplication: bool
+    remove_english_stopwords: bool
+    allowed_stopwords: List[str]
+    remove_domain_stopwords: bool
+    ngram_range: Tuple[int, int]
+
+
+# --------------------------------------
+# PREPROCESSING CONFIG
+# --------------------------------------
+
+
+class PreprocessingConfig(BaseModel):
+    cutoff_metric: str
+    cutoff_quantile: float = Field(ge=0.0, le=1.0)
+    features: FeaturesConfig
+    tokenization: TokenizationConfig
+
+
+# --------------------------------------
+# TRAINING CONFIG
+# --------------------------------------
+
+
+class SVDTrainingConfig(BaseModel):
+    tag_vectorization_strategy: str
+    text_vectorization_strategy: str
+    latent_dimension_strategy: str
+    latent_dimensions: int
+    normalization_strategy: str
+    iterations: int
+
+
+class TFIDFTrainingConfig(BaseModel):
+    min_document_occurences: int
+    max_document_frequency: float
+    max_features: int
+    normalization_strategy: str
+    sublinear: bool
+
+
+class TrainingConfig(BaseModel):
+    show_progress: bool
+    svd: SVDTrainingConfig
+    tfidf: TFIDFTrainingConfig  # FIXED: use snake_case, not "tf-idf"
+
+
+# --------------------------------------
+# RECOMMENDATION
+# --------------------------------------
+
+
+class RecommendationConfig(BaseModel):
+    preferences_vectorization_strategy: str
+    num_centroids: int
+    min_cluster_size: int
+
+
+# --------------------------------------
+# LOGGING + RANDOM SEED
+# --------------------------------------
+
+
+class LoggingConfig(BaseModel):
     level: str
 
 
-@dataclass
-class PreprocessingConfig:
-    top_record_limit: int | None
+# --------------------------------------
+# TOP-LEVEL CONFIG
+# --------------------------------------
 
 
-@dataclass
-class SingularValueDecompositionConfig:
-    component_count: int
-    random_state: int
-    minimum_document_frequency: int
-    maximum_features: int
-
-
-@dataclass
-class Config:
-    paths: PathsConfig
-    features: FeaturesConfig
+class Config(BaseModel):
+    random: dict
     logging: LoggingConfig
+    paths: PathsConfig
     preprocessing: PreprocessingConfig
-    singular_value_decomposition: SingularValueDecompositionConfig
+    training: TrainingConfig
+    recommendation: RecommendationConfig
+
+    @model_validator(mode="after")
+    def resolve_relative_paths(self):
+        """
+        Converts all relative paths to absolute paths based on the config file location.
+        """
+        base = Path(self.__config_file_dir)  # set dynamically in loader
+
+        self.paths.raw_data_directory = base / self.paths.raw_data_directory
+        self.paths.domain_stopwords_file = base / self.paths.domain_stopwords_file
+        self.paths.processed_features_file = base / self.paths.processed_features_file
+        self.paths.embeddings_directory = base / self.paths.embeddings_directory
+
+        return self
 
 
-def _resolve_path(base_directory: Path, value: str | Path) -> Path:
-    path = Path(value)
-    if path.is_absolute():
-        return path
-    return (base_directory / path).resolve()
+# --------------------------------------
+# LOAD FUNCTION
+# --------------------------------------
 
 
-def load_config(path: str | Path | None = None) -> Config:
-    """Load configuration from ``config.toml`` or the provided path."""
+def load_config(path: str) -> Config:
+    path = Path(path)
+    data = tomllib.loads(path.read_text("utf-8"))
 
-    if path is None:
-        config_path = Path.cwd() / "config.toml"
-    else:
-        config_path = Path(path)
+    # Inject config directory into instance for model validator
+    config = Config.model_validate(data)
+    config.__config_file_dir = str(path.parent)
 
-    with config_path.open("rb") as config_file:
-        raw_config = tomllib.load(config_file)
-
-    config_directory = config_path.parent
-
-    raw_paths_config = raw_config.get("paths", {})
-    raw_models_directory = raw_paths_config.get(
-        "models_dir", raw_paths_config.get("artifacts")
-    )
-    if raw_models_directory is None:
-        raise KeyError("Config.paths must provide 'models_dir' (or legacy 'artifacts')")
-
-    paths = PathsConfig(
-        raw_data=_resolve_path(config_directory, raw_paths_config["raw_data"]),
-        processed_features=_resolve_path(
-            config_directory, raw_paths_config["processed_features"]
-        ),
-        models_directory=_resolve_path(config_directory, raw_models_directory),
-    )
-
-    raw_features = raw_config.get("features", {})
-    features = FeaturesConfig(
-        text_columns=list(raw_features.get("text_columns", [])),
-        numeric_columns=list(raw_features.get("numeric_columns", [])),
-    )
-
-    raw_logging = raw_config.get("logging", {})
-    logging_config = LoggingConfig(level=raw_logging.get("level", "INFO"))
-
-    raw_preprocessing = raw_config.get("preprocessing", {})
-    preprocessing = PreprocessingConfig(
-        top_record_limit=raw_preprocessing.get("top_n", 2000)
-    )
-
-    raw_svd_config = raw_config.get("svd", {})
-    singular_value_decomposition = SingularValueDecompositionConfig(
-        component_count=raw_svd_config.get("n_components"),
-        random_state=raw_svd_config.get("random_state"),
-        minimum_document_frequency=raw_svd_config.get("min_df"),
-        maximum_features=raw_svd_config.get("max_features"),
-    )
-
-    return Config(
-        paths=paths,
-        features=features,
-        logging=logging_config,
-        preprocessing=preprocessing,
-        singular_value_decomposition=singular_value_decomposition,
-    )
+    # Re-run validator now that the directory is available
+    return config.resolve_relative_paths()
