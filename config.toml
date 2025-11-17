@@ -12,7 +12,7 @@ embeddings_directory = "data/embeddings"
 [preprocessing.filters]
 max_year = 2020                 # Exclude very new games lacking enough ratings
 min_popularity_quantile = 0.30  # Drop the least popular 30% of games
-min_avg_rating = 5.5            # Drop very poorly rated games
+min_avg_rating = 5.0            # Drop very poorly rated games
 max_required_players = 6        # Drop games that require 6+ players
 max_playing_time_minutes = 210  # Drop extremely long games
 
@@ -94,6 +94,7 @@ taste_dimensions = 250
 # "mean" = balanced tastes (game must match overall profile)
 similarity_aggregation = "max"
 
+[recommendation.taste_model]
 # Most players like different kinds of games (e.g., heavy strategy, quick fillers,
 # thematic co-ops). If we combine all liked games into one profile, these distinct
 # tastes get averaged together and lose their meaning. Splitting into multiple

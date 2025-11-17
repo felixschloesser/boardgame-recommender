@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any, Sequence
 
 import numpy as np
 import polars as pl
@@ -12,223 +12,298 @@ from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm.auto import tqdm
 
-from boardgame_recommender.config import Config
-from boardgame_recommender.pipelines.preprocessing import normalized_numeric_columns
+from boardgame_recommender.config import (
+    Config,
+    FeatureWeightsConfig,
+    TextVectorizationConfig,
+)
+from boardgame_recommender.utils.transforms import normalize_rows
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Embedding:
+    """
+    Learned embedding for all games in the catalog.
+
+    - `vectors` holds one row per game including:
+        * base metadata columns (bgg_id, name, ratings, players, time)
+        * taste_* columns representing the low-dimensional embedding.
+    - `metadata` contains training configuration and schema details.
+    """
+
     run_identifier: str
     vectors: pl.DataFrame
     metadata: dict[str, Any]
 
-    def __str__(self) -> str:
+    def __str__(self) -> str:  # pragma: no cover - human-readable debug repr
         return (
-            f"Embedding(run_id={self.run_identifier}, "
-            f"rows={self.vectors.height}, "
-            f"dimensions={self.metadata.get('feature_dimension')})"
+            f"Embedding(run_id={self.run_identifier}, rows={self.vectors.height}, "
+            f"dimensions={len(self.metadata.get('embedding_columns', []))})"
         )
-
-
-def _non_empty_strings(values: Iterable[str | None]) -> list[str]:
-    cleaned: list[str] = []
-    for value in values:
-        cleaned.append(value.strip() if isinstance(value, str) else "")
-    return cleaned
-
-
-def _vectorize_column(
-    series: pl.Series,
-    tfidf_config,
-    ngram_range: tuple[int, int],
-) -> sparse.csr_matrix | None:
-    values = _non_empty_strings(series.to_list())
-    if not any(value for value in values):
-        return None
-    vectorizer = TfidfVectorizer(
-        min_df=tfidf_config.min_document_occurences,
-        max_df=tfidf_config.max_document_frequency,
-        max_features=tfidf_config.max_features,
-        norm=tfidf_config.normalization_strategy,
-        sublinear_tf=tfidf_config.sublinear,
-        ngram_range=ngram_range,
-    )
-    try:
-        matrix = vectorizer.fit_transform(values)
-    except ValueError:
-        return None
-    return sparse.csr_matrix(matrix)
-
-
-def _build_text_matrix(
-    features: pl.DataFrame,
-    column_names: list[str],
-    tfidf_config,
-    token_config,
-    weights_lookup: dict[str, float],
-) -> sparse.csr_matrix | None:
-    blocks: list[sparse.csr_matrix] = []
-    for column in column_names:
-        if column not in features.columns:
-            logger.warning("Text column '%s' missing; skipping", column)
-            continue
-        block = _vectorize_column(features[column], tfidf_config, token_config.ngram_range)
-        if block is None:
-            continue
-        weight = weights_lookup.get(column, 1.0)
-        if weight != 1.0:
-            block = block.multiply(weight)
-        blocks.append(block)
-    if not blocks:
-        return None
-    return sparse.hstack(blocks).tocsr()
-
-
-def _build_numeric_matrix(
-    features: pl.DataFrame,
-    numeric_columns: list[str],
-    weight: float,
-) -> sparse.csr_matrix | None:
-    if not numeric_columns:
-        return None
-    missing = [column for column in numeric_columns if column not in features.columns]
-    if missing:
-        raise ValueError(
-            "Preprocessed dataset is missing normalized numeric columns: "
-            f"{', '.join(missing)}"
-        )
-    numeric_array = features.select(numeric_columns).to_numpy().astype(float)
-    if np.isnan(numeric_array).any():
-        raise ValueError(
-            "Numeric feature matrix contains NaN values after preprocessing; check null handling."
-        )
-    if weight != 1.0:
-        numeric_array *= weight
-    return sparse.csr_matrix(numeric_array)
-
-
-def _base_vectors(features: pl.DataFrame) -> pl.DataFrame:
-    base_columns = [
-        column
-        for column in (
-            "bgg_id",
-            "name",
-            "avg_rating",
-            "min_players",
-            "max_players",
-            "playing_time_minutes",
-        )
-        if column in features.columns
-    ]
-    return features.select(base_columns)
 
 
 def train(
+    *,
     features: pl.DataFrame,
     config: Config,
     show_progress: bool = False,
 ) -> Embedding:
     """
-    Train a TF-IDF + TruncatedSVD embedding over the curated feature table.
-    """
+    Train a low-dimensional "taste" embedding from preprocessed features.
 
+    Expected input schema (configurable upstream):
+    - text_* columns: free text facets (description, mechanics, categories, themes, ...)
+    - cat_* columns: categorical / token-like text features
+    - num_* columns: numeric features (weights, normalized counts, etc.)
+
+    The pipeline:
+        1. Per-column TF-IDF for text/categorical features with configurable weights.
+        2. Numeric features as a dense block with its own weight.
+        3. Feature matrix concatenation (scipy.sparse.hstack).
+        4. TruncatedSVD for dimensionality reduction.
+        5. Optional L2 row-normalization of the resulting taste vectors.
+        6. Construction of a Polars DataFrame with base metadata + taste_* columns.
+    """
     if features.is_empty():
-        raise ValueError("Cannot train on an empty dataset; run preprocessing first.")
+        raise ValueError("Cannot train on an empty feature table.")
+
+    schema = _infer_feature_schema(features)
+    if not schema.has_any_features:
+        raise ValueError(
+            "No training features detected; expected text_*, cat_* or num_* columns. "
+            "Run preprocessing first."
+        )
 
     progress = tqdm(
         total=3,
         desc="Training embedding",
-        disable=not show_progress,
         unit="stage",
+        disable=not show_progress,
     )
 
-    preprocessing_config = config.preprocessing
-    training_config = config.training
-    tfidf_config = training_config.tfidf
-    svd_config = training_config.svd
-
-    weights = preprocessing_config.features.weights
-    weights_lookup = {
-        "description": weights.description,
-        "mechanics": weights.mechanics,
-        "categories": weights.categories,
-        "themes": weights.themes,
-    }
-
-    text_columns = list(preprocessing_config.features.text.columns)
-    categorical_columns = list(preprocessing_config.features.categorical.columns)
-    text_matrix = _build_text_matrix(
-        features,
-        [*text_columns, *categorical_columns],
-        tfidf_config,
-        preprocessing_config.tokenization,
-        weights_lookup,
+    if show_progress:
+        logger.info("Building sparse feature matrix from text and categorical signals ...")
+    text_blocks = _build_text_blocks(
+        frame=features,
+        columns=[*schema.text_columns, *schema.categorical_columns],
+        weights=config.preprocessing.features.weights,
+        text_config=config.training.text_vectorization,
     )
     progress.update(1)
 
-    numeric_sources: list[str] = []
-    numeric_config = preprocessing_config.features.numeric
-    numeric_sources.extend(numeric_config.normal.columns)
-    numeric_sources.extend(numeric_config.heavy_tail.columns)
-    numeric_columns = normalized_numeric_columns(numeric_sources)
-    numeric_matrix = _build_numeric_matrix(features, numeric_columns, weight=weights.numeric)
+    if show_progress:
+        logger.info("Appending numeric structure to feature matrix ...")
+    numeric_block = _build_numeric_block(
+        frame=features,
+        columns=schema.numeric_columns,
+        weight=config.preprocessing.features.weights.numeric,
+    )
 
-    blocks = [block for block in (text_matrix, numeric_matrix) if block is not None]
+    blocks = [block for block in (*text_blocks, numeric_block) if block is not None]
     if not blocks:
-        raise ValueError("No usable features were produced for training.")
-    feature_matrix = sparse.hstack(blocks).tocsr()
+        raise ValueError("Failed to build any feature matrices for training.")
+
+    feature_matrix = sparse.hstack(blocks, format="csr")
     progress.update(1)
 
+    taste_config = config.training.taste_model
+    if taste_config.taste_dimensions <= 0:
+        raise ValueError("taste_dimensions must be greater than zero.")
+
+    if show_progress:
+        logger.info(
+            "Computing low-dimensional taste embedding via TruncatedSVD "
+            "(%d dimensions) ...",
+            taste_config.taste_dimensions,
+        )
     svd = TruncatedSVD(
-        n_components=svd_config.latent_dimensions,
-        n_iter=svd_config.iterations,
-        random_state=config.random.seed,
+        n_components=taste_config.taste_dimensions,
+        random_state=config.random_seed,
     )
-    embedding_matrix = svd.fit_transform(feature_matrix)
+    embedding_matrix = svd.fit_transform(feature_matrix).astype(np.float64, copy=False)
+
+    if taste_config.normalize_taste_vectors:
+        embedding_matrix = normalize_rows(embedding_matrix)
+
     progress.update(1)
     progress.close()
 
     embedding_columns = [
-        f"svd_{index}" for index in range(svd_config.latent_dimensions)
+        f"taste_{index}" for index in range(taste_config.taste_dimensions)
     ]
+    base_columns = _base_columns(features)
+
     vectors = pl.concat(
         [
-            _base_vectors(features),
+            features.select(base_columns),
             pl.DataFrame(embedding_matrix, schema=embedding_columns),
         ],
         how="horizontal",
     )
 
     run_identifier = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    created_at = datetime.now(timezone.utc).isoformat()
+
     metadata: dict[str, Any] = {
         "run_identifier": run_identifier,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": created_at,
         "row_count": features.height,
-        "feature_dimension": len(embedding_columns),
-        "feature_columns": {
-            "text": text_columns,
-            "categorical": categorical_columns,
-            "numeric": numeric_columns,
+        "embedding_columns": embedding_columns,
+        "taste_dimensions": taste_config.taste_dimensions,
+        "training_config": config.training.model_dump(),
+        "feature_schema": {
+            "text": schema.text_columns,
+            "categorical": schema.categorical_columns,
+            "numeric": schema.numeric_columns,
         },
-        "cutoff": {
-            "metric": preprocessing_config.cutoff_metric,
-            "quantile": preprocessing_config.cutoff_quantile,
-        },
-        "model": {
-            "tfidf": {
-                "min_document_occurrences": tfidf_config.min_document_occurences,
-                "max_document_frequency": tfidf_config.max_document_frequency,
-                "max_features": tfidf_config.max_features,
-                "normalization": tfidf_config.normalization_strategy,
-                "sublinear_tf": tfidf_config.sublinear,
-            },
-            "svd": {
-                "latent_dimensions": svd_config.latent_dimensions,
-                "iterations": svd_config.iterations,
-            },
-        },
+        "config": config.model_dump(),
     }
 
     return Embedding(run_identifier=run_identifier, vectors=vectors, metadata=metadata)
+
+
+@dataclass
+class _FeatureSchema:
+    text_columns: list[str]
+    categorical_columns: list[str]
+    numeric_columns: list[str]
+
+    @property
+    def has_any_features(self) -> bool:
+        return bool(self.text_columns or self.categorical_columns or self.numeric_columns)
+
+
+def _infer_feature_schema(frame: pl.DataFrame) -> _FeatureSchema:
+    """
+    Identify which columns participate in training based on naming convention.
+    """
+    text_columns = _prefixed_columns(frame, "text_")
+    categorical_columns = _prefixed_columns(frame, "cat_")
+    numeric_columns = _prefixed_columns(frame, "num_")
+
+    return _FeatureSchema(
+        text_columns=text_columns,
+        categorical_columns=categorical_columns,
+        numeric_columns=numeric_columns,
+    )
+
+
+def _prefixed_columns(frame: pl.DataFrame, prefix: str) -> list[str]:
+    return [column for column in frame.columns if column.startswith(prefix)]
+
+
+def _build_text_blocks(
+    *,
+    frame: pl.DataFrame,
+    columns: Sequence[str],
+    weights: FeatureWeightsConfig,
+    text_config: TextVectorizationConfig,
+) -> list[sparse.csr_matrix]:
+    """
+    Build one TF-IDF block per text/categorical column.
+
+    Rationale:
+    - Separate vectorizers per facet allows domain experts to adjust weights independently.
+    - We apply scalar weights *before* SVD so that taste dimensions remain interpretable.
+    """
+    blocks: list[sparse.csr_matrix] = []
+
+    for column in columns:
+        if column not in frame.columns:
+            logger.warning("Feature column '%s' missing; skipping.", column)
+            continue
+
+        values = [
+            value if isinstance(value, str) else ("" if value is None else str(value))
+            for value in frame[column].to_list()
+        ]
+        has_content = any(value.strip() for value in values if isinstance(value, str))
+        if not has_content:
+            logger.info("Feature column '%s' empty after preprocessing; skipping.", column)
+            continue
+
+        vectorizer = TfidfVectorizer(
+            min_df=text_config.min_document_occurrences,
+            max_df=text_config.max_document_frequency,
+            norm="l2" if text_config.equalize_description_length else None,
+            sublinear_tf=text_config.downweight_repeated_terms,
+        )
+
+        try:
+            matrix = vectorizer.fit_transform(values)
+        except ValueError:
+            logger.info(
+                "TfidfVectorizer for column '%s' produced no features; skipping.",
+                column,
+            )
+            continue
+
+        matrix = sparse.csr_matrix(matrix, copy=False)
+        weight = _column_weight(column, weights)
+
+        if weight != 1.0:
+            matrix = matrix.multiply(weight)
+
+        blocks.append(matrix)
+
+    return blocks
+
+
+def _column_weight(column: str, weights: FeatureWeightsConfig) -> float:
+    """
+    Map a feature column suffix to its configured weight.
+
+    We assume feature naming like:
+        text_description, text_mechanics, text_categories, text_themes, ...
+
+    Fallback to 1.0 for unknown suffixes so adding new columns is safe by default.
+    """
+    suffix = column.split("_", 1)[1] if "_" in column else column
+    return {
+        "description": weights.description,
+        "mechanics": weights.mechanics,
+        "categories": weights.categories,
+        "themes": weights.themes,
+    }.get(suffix, 1.0)
+
+
+def _build_numeric_block(
+    *,
+    frame: pl.DataFrame,
+    columns: Sequence[str],
+    weight: float,
+) -> sparse.csr_matrix | None:
+    """
+    Build a dense numeric feature block.
+
+    We assume upstream preprocessing already handled scaling/normalization if desired.
+    """
+    if not columns:
+        return None
+
+    matrix = frame.select(columns).to_numpy().astype("float64", copy=False)
+
+    if not np.isfinite(matrix).all():
+        raise ValueError("Numeric features contain invalid values; check preprocessing.")
+
+    if weight != 1.0:
+        matrix = matrix * float(weight)
+
+    return sparse.csr_matrix(matrix)
+
+
+def _base_columns(frame: pl.DataFrame) -> list[str]:
+    """
+    Base metadata columns that are carried over into the embedding DataFrame.
+    """
+    candidates = (
+        "bgg_id",
+        "name",
+        "avg_rating",
+        "min_players",
+        "max_players",
+        "playing_time_minutes",
+    )
+    return [column for column in candidates if column in frame.columns]

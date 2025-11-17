@@ -57,7 +57,7 @@ I stopped working on the supervised reranker after uncovering a few conceptual i
 │   ├─ main.py         # CLI wiring + commands
 │   ├─ config.py       # Strongly typed TOML loader
 │   ├─ pipelines/      # Preprocessing + training stages (embedding-based)
-│   └─ recommendation.py
+│   └─ recommend.py
 ```
 
 > Pytest scaffolding is still on the roadmap; the `tests/` package referenced earlier has not been created yet.

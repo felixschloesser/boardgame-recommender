@@ -3,19 +3,21 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 import polars as pl
 import tomllib
 
 from boardgame_recommender.config import Config, load_config
 from boardgame_recommender.pipelines.preprocessing import preprocess_data
-from boardgame_recommender.pipelines.training import train, Embedding
-from boardgame_recommender.recommendation import recommend_games
-
+from boardgame_recommender.pipelines.training import Embedding, train
+from boardgame_recommender.recommend import recommend_games
 
 LOG_FORMAT = "%(levelname)s [%(name)s] %(message)s"
 logger = logging.getLogger(__name__)
+
+EMBEDDING_VECORS_FILENAME = "vectors.parquet"
+EMBEDDING_METADATA_FILENAME = "metadata.json"
 
 
 # ----------------------
@@ -67,8 +69,8 @@ def load_embedding(path: Path, run_identifier: str) -> Embedding:
     if not run_dir.exists():
         raise SystemExit(f"Embedding run '{run_identifier}' not found in {path}")
 
-    vectors_path = run_dir / "vectors.parquet"
-    metadata_path = run_dir / "metadata.json"
+    vectors_path = run_dir / EMBEDDING_VECORS_FILENAME
+    metadata_path = run_dir / EMBEDDING_METADATA_FILENAME
 
     try:
         vectors = pl.read_parquet(vectors_path)
@@ -104,9 +106,9 @@ def find_latest_run_identifier(path: Path) -> str:
         if not entry.is_dir():
             continue
 
-        vectors = entry / "vectors.parquet"
-        metadata = entry / "metadata.json"
-        if vectors.exists() and metadata.exists():
+        vector_path = entry / EMBEDDING_VECORS_FILENAME
+        metadata_path = entry / EMBEDDING_METADATA_FILENAME
+        if vector_path.exists() and metadata_path.exists():
             candidates.append(entry)
 
     if not candidates:
@@ -125,6 +127,7 @@ def _preprocess(config: Config, args: argparse.Namespace) -> None:
     features, quality_report = preprocess_data(
         directory=config.paths.raw_data_directory,
         stopwords=stopwords,
+        synonyms=synonyms,
         config=config.preprocessing,
     )
 
@@ -140,7 +143,6 @@ def _preprocess(config: Config, args: argparse.Namespace) -> None:
     print(f"Processed feature dataset written to: {out_path}")
     print(f"Data quality report written to: {quality_path}")
     print(f"Rows: {features.height:,}  Columns: {features.width:,}")
-    _print_filtering_summary(quality_report)
 
 
 def _train(config: Config, args: argparse.Namespace) -> None:
@@ -149,18 +151,20 @@ def _train(config: Config, args: argparse.Namespace) -> None:
     embedding = train(
         features=features,
         config=config,
-        show_progress=config.training.show_progress,
+        show_progress=True,
     )
 
     run_dir = config.paths.embeddings_directory / embedding.run_identifier
     run_dir.mkdir(parents=True, exist_ok=True)
-    embedding.vectors.write_parquet(run_dir / "vectors.parquet")
+    vector_path = run_dir / EMBEDDING_VECORS_FILENAME
+    embedding.vectors.write_parquet(vector_path)
 
-    metadata_path = run_dir / "metadata.json"
+    metadata_path = run_dir / EMBEDDING_METADATA_FILENAME
     metadata_json = json.dumps(embedding.metadata, indent=2)
     metadata_path.write_text(metadata_json, encoding="utf-8")
 
-    print(f"Training complete. Resulting Embedding:")
+    print(f"Trained embedding vectors written to: {vector_path}")
+    print(f"Metadata written to: {metadata_path}")
     print(embedding)
 
 
@@ -191,7 +195,7 @@ def _recommend(config: Config, args: argparse.Namespace) -> None:
     # Column width for nice alignment
     name_width = max(len(rec["name"]) for rec in recommendations)
 
-    print("Rank  Name".ljust(name_width + 10) + "Score    Rating   Time")
+    print("Rank  Name".ljust(name_width + 10) + "Score    Rating    Time")
     print("-" * (name_width + 10 + 25))
 
     for index, rec in enumerate(recommendations, start=1):
@@ -202,7 +206,7 @@ def _recommend(config: Config, args: argparse.Namespace) -> None:
 
         print(
             f"{index:>4}. {name.ljust(name_width)}  "
-            f"{score:>6.3f}   {rating:>6.2f}   {time}"
+            f"{score:>6.3f}   {rating:>6.2f}      {time}"
         )
 
 

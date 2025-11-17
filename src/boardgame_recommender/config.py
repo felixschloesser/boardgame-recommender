@@ -1,15 +1,11 @@
 from pathlib import Path
-from typing import List, Tuple, Optional
-from pydantic import BaseModel, Field
-import tomllib
+from typing import List, Optional, Tuple, Union
 
+import tomllib
+from pydantic import BaseModel, Field
 
 PROCESSED_FEATURES_FILENAME = "boardgames.parquet"
 DATA_QUALITY_REPORT_FILENAME = "data_quality.json"
-
-EMBEDDING_VECORS_FILENAME = "vectors.parquet"
-EMBEDDING_METADATA_FILENAME = "metadata.json"
-
 
 # --------------------------------------
 # PATH CONFIG
@@ -46,6 +42,15 @@ class PreprocessingFilters(BaseModel):
 
 
 # --------------------------------------
+class FeatureWeightsConfig(BaseModel):
+    description: float
+    mechanics: float
+    categories: float
+    themes: float
+    numeric: float
+
+
+# --------------------------------------
 # FEATURES
 # --------------------------------------
 
@@ -54,14 +59,7 @@ class FeaturesConfig(BaseModel):
     text: List[str]
     categorical: List[str]
     numeric: List[str]
-
-
-class FeatureWeightsConfig(BaseModel):
-    description: float
-    mechanics: float
-    categories: float
-    themes: float
-    numeric: float
+    weights: FeatureWeightsConfig
 
 
 # --------------------------------------
@@ -102,11 +100,16 @@ class TasteModelConfig(BaseModel):
 # --------------------------------------
 
 
-class RecommendationConfig(BaseModel):
-    similarity_aggregation: str
+class RecommendationTasteModelConfig(BaseModel):
     min_samples_per_centroid: int
     dynamic_centroids: bool
     centroid_scaling_factor: float
+
+
+class RecommendationConfig(BaseModel):
+    similarity_aggregation: str
+    taste_model: RecommendationTasteModelConfig
+    random_seed: Optional[int] = None
 
 
 # --------------------------------------
@@ -117,7 +120,6 @@ class RecommendationConfig(BaseModel):
 class PreprocessingConfig(BaseModel):
     filters: PreprocessingFilters
     features: FeaturesConfig
-    feature_weights: FeatureWeightsConfig
     tokenization: TokenizationConfig
 
 
@@ -154,12 +156,12 @@ def _resolve_path(base: Path, value: Path) -> Path:
     return value if value.is_absolute() else (base / value).resolve()
 
 
-def load_config(path: str) -> Config:
-    path = Path(path)
-    data = tomllib.loads(path.read_text("utf-8"))
+def load_config(path: Union[str, Path]) -> Config:
+    path_obj = Path(path)
+    data = tomllib.loads(path_obj.read_text("utf-8"))
     config = Config.model_validate(data)
 
-    base = path.parent.resolve()
+    base = path_obj.parent.resolve()
 
     # correct property names to match TOML
     config.paths.stopwords_file = _resolve_path(base, config.paths.stopwords_file)
@@ -173,5 +175,7 @@ def load_config(path: str) -> Config:
     config.paths.embeddings_directory = _resolve_path(
         base, config.paths.embeddings_directory
     )
+
+    config.recommendation.random_seed = config.random_seed
 
     return config
