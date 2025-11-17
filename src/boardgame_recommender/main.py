@@ -49,10 +49,19 @@ def load_synonyms(path: Path) -> dict[str, list[str]]:
 
 
 def load_features(path: Path) -> pl.DataFrame:
+    if not path.exists():
+        raise SystemExit(
+            "Processed feature dataset not found at "
+            f"{path}. Run `python -m boardgame_recommender preprocess` first."
+        )
+
     try:
         return pl.read_parquet(path)
     except Exception as exc:
-        raise SystemExit(f"Failed to load features from {path}: {exc}")
+        raise SystemExit(
+            "Failed to load features from "
+            f"{path}: {exc}. Try re-running `python -m boardgame_recommender preprocess`."
+        )
 
 
 def load_embedding(path: Path, run_identifier: str) -> Embedding:
@@ -129,6 +138,7 @@ def _preprocess(config: Config, args: argparse.Namespace) -> None:
         stopwords=stopwords,
         synonyms=synonyms,
         config=config.preprocessing,
+        show_progress=True,
     )
 
     out_path = config.paths.processed_features_file

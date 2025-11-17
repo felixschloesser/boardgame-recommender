@@ -11,6 +11,7 @@ repos:
         entry: python -m mypy --explicit-package-bases src/boardgame_recommender
         language: system
         types: [python]
+        pass_filenames: false
       - id: pytest
         name: Pytest
         entry: pytest

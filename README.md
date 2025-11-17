@@ -176,3 +176,10 @@ pre-commit install
 ```
 
 The configured hooks execute `ruff`, `mypy --explicit-package-bases src/boardgame_recommender`, and `pytest`. Use `SKIP=pytest git commit ...` if you need to bypass the full suite temporarily (e.g., when offline), but re-run locally before pushing.
+
+To focus on fast unit tests vs. heavier integration runs:
+
+```bash
+pytest -m "not end_to_end"   # unit tests
+pytest -m "end_to_end"       # pipeline/integration tests
+```

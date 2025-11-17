@@ -1,0 +1,4 @@
+# file: /Users/tintin/Developer/boardgame-reccomender/src/boardgame_recommender/config.py
+# hypothesis_version: 6.148.1
+
+[0.0, 1.0, 'boardgames.parquet', 'data_quality.json', 'utf-8']

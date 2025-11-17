@@ -152,13 +152,13 @@ def train(
         "row_count": features.height,
         "embedding_columns": embedding_columns,
         "taste_dimensions": taste_config.taste_dimensions,
-        "training_config": config.training.model_dump(),
+        "training_config": config.training.model_dump(mode="json"),
         "feature_schema": {
             "text": schema.text_columns,
             "categorical": schema.categorical_columns,
             "numeric": schema.numeric_columns,
         },
-        "config": config.model_dump(),
+        "config": config.model_dump(mode="json"),
     }
 
     return Embedding(run_identifier=run_identifier, vectors=vectors, metadata=metadata)

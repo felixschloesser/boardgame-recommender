@@ -20,6 +20,7 @@ from boardgame_recommender.config import (
     TrainingConfig,
 )
 from boardgame_recommender.pipelines.training import Embedding
+from boardgame_recommender.recommend import RecommendationContext
 
 
 @pytest.fixture
@@ -152,3 +153,84 @@ def sample_embedding() -> Embedding:
         "embedding_columns": ["taste_0", "taste_1"],
     }
     return Embedding(run_identifier="test", vectors=vectors, metadata=metadata)
+
+
+@pytest.fixture
+def recommendation_context(sample_embedding, recommendation_config) -> RecommendationContext:
+    return RecommendationContext.from_embedding(
+        embedding=sample_embedding,
+        config=recommendation_config,
+    )
+
+
+@pytest.fixture
+def config_factory():
+    def _factory(base_dir: Path) -> Config:
+        paths = PathsConfig(
+            stopwords_file=base_dir / "stopwords.txt",
+            synonyms_file=base_dir / "synonyms.toml",
+            raw_data_directory=base_dir / "raw",
+            processed_features_directory=base_dir / "processed",
+            embeddings_directory=base_dir / "embeddings",
+        )
+        filters = PreprocessingFilters(
+            max_year=2025,
+            min_popularity_quantile=0.5,
+            min_avg_rating=6.0,
+            max_required_players=4,
+            max_playing_time_minutes=120,
+        )
+        weights = FeatureWeightsConfig(
+            description=1.0,
+            mechanics=1.0,
+            categories=1.0,
+            themes=1.0,
+            numeric=1.0,
+        )
+        features = FeaturesConfig(
+            text=["description"],
+            categorical=["mechanics"],
+            numeric=["avg_rating"],
+            weights=weights,
+        )
+        tokenization = TokenizationConfig(
+            unify_synonyms=True,
+            remove_common_domain_words=True,
+            ngram_range=(1, 2),
+        )
+        preprocessing = PreprocessingConfig(
+            filters=filters,
+            features=features,
+            tokenization=tokenization,
+        )
+        training = TrainingConfig(
+            text_vectorization=TextVectorizationConfig(
+                min_document_occurrences=1,
+                max_document_frequency=1.0,
+                equalize_description_length=True,
+                downweight_repeated_terms=False,
+            ),
+            taste_model=TasteModelConfig(
+                normalize_taste_vectors=False,
+                taste_dimensions=2,
+            ),
+        )
+        recommendation = RecommendationConfig(
+            similarity_aggregation="max",
+            taste_model=RecommendationTasteModelConfig(
+                min_samples_per_centroid=2,
+                dynamic_centroids=False,
+                centroid_scaling_factor=0.5,
+            ),
+            random_seed=7,
+        )
+        return Config(
+            random_seed=7,
+            logging_level="INFO",
+            paths=paths,
+            preprocessing=preprocessing,
+            training=training,
+            recommendation=recommendation,
+        )
+
+    return _factory

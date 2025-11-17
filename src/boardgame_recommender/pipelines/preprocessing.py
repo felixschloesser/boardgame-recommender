@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import polars as pl
+from tqdm.auto import tqdm
 
 from boardgame_recommender.config import (
     PreprocessingConfig,
@@ -53,7 +54,7 @@ class _SynonymNormalizer:
             for variant in sorted(entries, key=len, reverse=True):
                 if not variant.strip():
                     continue
-                pattern = re.compile(rf"\\b{re.escape(self._canonicalize(variant))}\\b")
+                pattern = re.compile(rf"\b{re.escape(self._canonicalize(variant))}\b")
                 self._patterns.append((pattern, canonical_value))
 
     @staticmethod
@@ -77,48 +78,69 @@ def preprocess_data(
     stopwords: set[str],
     config: PreprocessingConfig,
     synonyms: dict[str, list[str]] | None = None,
+    show_progress: bool = False,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
     directory = directory.resolve()
-    logger.info("Loading raw files from %s", directory)
     stopword_lookup = {word.lower() for word in stopwords}
+    progress = tqdm(
+        total=4,
+        desc="Preprocessing data",
+        unit="stage",
+        disable=not show_progress,
+    )
+    try:
+        logger.info("Loading raw files from %s", directory)
+        games = _load_games(directory)
+        categories = _extract_category_flags(games)
+        mechanics = _load_tag_table(directory / "mechanics.csv", "mechanics")
+        subcategories = _load_tag_table(directory / "subcategories.csv", "subcategories")
+        themes = _load_tag_table(directory / "themes.csv", "themes")
+        progress.update(1)
 
-    games = _load_games(directory)
-    categories = _extract_category_flags(games)
-    mechanics = _load_tag_table(directory / "mechanics.csv", "mechanics")
-    subcategories = _load_tag_table(directory / "subcategories.csv", "subcategories")
-    themes = _load_tag_table(directory / "themes.csv", "themes")
-
-    enriched = (
-        games.drop([column for column in games.columns if column.startswith("cat_")])
-        .join(categories, on="bgg_id", how="left")
-        .join(subcategories, on="bgg_id", how="left")
-        .join(mechanics, on="bgg_id", how="left")
-        .join(themes, on="bgg_id", how="left")
-        .with_columns(
-            # Community reports track actual table pace better than marketing claims.
-            pl.coalesce(
-                pl.col("community_max_playtime"),
-                pl.col("community_min_playtime"),
-                pl.col("mfg_playtime"),
-            ).alias("playing_time_minutes"),
+        if show_progress:
+            logger.info("Enriching dataset with supplementary tags")
+        enriched = (
+            games.drop([column for column in games.columns if column.startswith("cat_")])
+            .join(categories, on="bgg_id", how="left")
+            .join(subcategories, on="bgg_id", how="left")
+            .join(mechanics, on="bgg_id", how="left")
+            .join(themes, on="bgg_id", how="left")
+            .with_columns(
+                # Community reports track actual table pace better than marketing claims.
+                pl.coalesce(
+                    pl.col("community_max_playtime"),
+                    pl.col("community_min_playtime"),
+                    pl.col("mfg_playtime"),
+                ).alias("playing_time_minutes"),
+            )
         )
-    )
 
-    enriched = enriched.with_columns(
-        pl.concat_str(
-            [pl.col("categories"), pl.col("subcategories")],
-            separator=", ",
-            ignore_nulls=True,
-        ).alias("categories"),
-    )
+        enriched = enriched.with_columns(
+            pl.concat_str(
+                [pl.col("categories"), pl.col("subcategories")],
+                separator=", ",
+                ignore_nulls=True,
+            ).alias("categories"),
+        )
+        progress.update(1)
 
-    filtered, filters_report = _apply_filters(enriched, config.filters)
-    features = _assemble_feature_table(
-        frame=filtered,
-        config=config,
-        stopwords=stopword_lookup,
-        synonyms=synonyms,
-    )
+        if show_progress:
+            logger.info("Applying configured filters")
+        filtered, filters_report = _apply_filters(enriched, config.filters)
+        progress.update(1)
+
+        if show_progress:
+            logger.info("Assembling feature table")
+        features = _assemble_feature_table(
+            frame=filtered,
+            config=config,
+            stopwords=stopword_lookup,
+            synonyms=synonyms,
+        )
+        progress.update(1)
+
+    finally:
+        progress.close()
 
     quality_report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

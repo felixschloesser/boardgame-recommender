@@ -14,9 +14,7 @@ authors = [
 
 dependencies = [
     "polars",
-    "pyarrow",
     "scikit-learn",
-    "joblib",
     "numpy",
     "scipy",
     "tqdm",
@@ -32,7 +30,7 @@ dev = [
     "pydantic",
     "ruff",
     "mypy",
-    "pytest"
+    "pytest",
 ]
 
 [tool.ruff]

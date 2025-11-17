@@ -41,7 +41,6 @@ class PreprocessingFilters(BaseModel):
     max_playing_time_minutes: int
 
 
-# --------------------------------------
 class FeatureWeightsConfig(BaseModel):
     description: float
     mechanics: float

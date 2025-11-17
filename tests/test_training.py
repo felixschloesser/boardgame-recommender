@@ -13,6 +13,19 @@ def test_train_empty_input_raises(config):
         train(features=empty, config=config)
 
 
+def test_train_requires_feature_columns(config):
+    frame = pl.DataFrame(
+        {
+            "bgg_id": [1],
+            "name": ["Alpha"],
+            "avg_rating": [7.0],
+        }
+    )
+    with pytest.raises(ValueError, match="No training features detected"):
+        train(features=frame, config=config)
+
+
+@pytest.mark.end_to_end
 def test_feature_schema_detection(sample_features, config):
     embedding = train(features=sample_features, config=config)
     schema = embedding.metadata["feature_schema"]
@@ -26,6 +39,7 @@ def test_feature_schema_detection(sample_features, config):
     }
 
 
+@pytest.mark.end_to_end
 def test_normalization_applied_when_enabled(sample_features, config):
     cfg = config.model_copy(deep=True)
     cfg.training.taste_model.normalize_taste_vectors = True
@@ -39,6 +53,7 @@ def test_normalization_applied_when_enabled(sample_features, config):
     ), "All taste rows should be normalized."
 
 
+@pytest.mark.end_to_end
 def test_taste_dimension_shape_and_metadata(sample_features, config):
     cfg = config.model_copy(deep=True)
     cfg.training.taste_model.taste_dimensions = 3
@@ -49,3 +64,10 @@ def test_taste_dimension_shape_and_metadata(sample_features, config):
     assert embedding.metadata["embedding_columns"] == taste_columns
     for column in taste_columns:
         assert column in embedding.vectors.columns
+
+
+def test_train_rejects_non_positive_taste_dimensions(sample_features, config):
+    cfg = config.model_copy(deep=True)
+    cfg.training.taste_model.taste_dimensions = 0
+    with pytest.raises(ValueError, match="taste_dimensions must be greater than zero"):
+        train(features=sample_features, config=cfg)
