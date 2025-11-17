@@ -24,6 +24,21 @@ from boardgame_recommender.pipelines.preprocessing import (
 logger = logging.getLogger(__name__)
 
 
+class Embedding:
+    def __init__(self, run_identifier, vectors, metadata):
+        self.run_identifier = run_identifier
+        self.vectors = vectors
+        self.metadata = metadata
+
+    @property
+    def row_count(self):
+        return self.vectors.height
+
+    @property
+    def feature_dimension(self):
+        return len(self.vectors.columns)
+
+
 @dataclass
 class TrainingArtifacts:
     """Bundle describing a finished training run and its exported paths."""

@@ -9,9 +9,8 @@ import polars as pl
 
 from boardgame_recommender.config import Config, load_config
 from boardgame_recommender.pipelines.preprocessing import preprocess_data
-from boardgame_recommender.pipelines.training import train
-from boardgame_recommender.pipelines.features import load_processed_features
-from boardgame_recommender.recommendation import load_embedding, recommend_games
+from boardgame_recommender.pipelines.training import train, Embedding
+from boardgame_recommender.recommendation import recommend_games
 
 
 LOG_FORMAT = "%(levelname)s [%(name)s] %(message)s"
@@ -23,13 +22,6 @@ logger = logging.getLogger(__name__)
 # ----------------------
 
 
-def load_features(path: Path) -> pl.DataFrame:
-    try:
-        return pl.read_parquet(path)
-    except Exception as exc:
-        raise SystemExit(f"Failed to load features from {path}: {exc}")
-
-
 def load_stopwords(path: Path) -> set[str]:
     try:
         return {
@@ -39,6 +31,47 @@ def load_stopwords(path: Path) -> set[str]:
         }
     except Exception as exc:
         raise SystemExit(f"Failed to load stopwords from {path}: {exc}")
+
+
+def load_features(path: Path) -> pl.DataFrame:
+    try:
+        return pl.read_parquet(path)
+    except Exception as exc:
+        raise SystemExit(f"Failed to load features from {path}: {exc}")
+
+
+def load_embedding(path: Path, run_identifier: str) -> Embedding:
+    """
+    Load a trained embedding run from disk.
+
+    Expected directory layout:
+        path/
+          └── {run_identifier}/
+                 ├── vectors.parquet
+                 └── metadata.json
+    """
+    run_dir = path / run_identifier
+    if not run_dir.exists():
+        raise SystemExit(f"Embedding run '{run_identifier}' not found in {path}")
+
+    vectors_path = run_dir / "vectors.parquet"
+    metadata_path = run_dir / "metadata.json"
+
+    try:
+        vectors = pl.read_parquet(vectors_path)
+    except Exception as exc:
+        raise SystemExit(f"Failed to load embedding vectors: {exc}")
+
+    try:
+        metadata = json.loads(metadata_path.read_text("utf-8"))
+    except Exception as exc:
+        raise SystemExit(f"Failed to load embedding metadata: {exc}")
+
+    return Embedding(
+        run_identifier=run_identifier,
+        vectors=vectors,
+        metadata=metadata,
+    )
 
 
 # ----------------------
@@ -61,7 +94,8 @@ def _preprocess(config: Config, args: argparse.Namespace) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     features.write_parquet(out_path)
 
-    print(f"{len(features.columns)} features processed.")
+    print(f"Processed feature dataset written to: {out_path}")
+    print(f"Rows: {features.height:,}  Columns: {features.width:,}")
 
 
 def _train(config: Config, args: argparse.Namespace) -> None:
@@ -75,20 +109,14 @@ def _train(config: Config, args: argparse.Namespace) -> None:
 
     run_dir = config.paths.embeddings_directory / embedding.run_identifier
     run_dir.mkdir(parents=True, exist_ok=True)
+    embedding.vectors.write_parquet(run_dir / "vectors.parquet")
 
     metadata_path = run_dir / "metadata.json"
-    metadata_path.write_text(json.dumps(embedding.metadata, indent=2), encoding="utf-8")
+    metadata_json = json.dumps(embedding.metadata, indent=2)
+    metadata_path.write_text(metadata_json, encoding="utf-8")
 
-    print(f"Training complete. Run: {embedding.run_identifier}")
-    print(f"Rows: {embedding.row_count}  Features: {embedding.feature_dimension}")
-
-    recall = embedding.evaluation.get("recall_at_10", {})
-    print(
-        "Recall@10 -> "
-        f"hit_rate={recall.get('hit_rate', 0):.3f} "
-        f"mean_recall={recall.get('mean_recall', 0):.3f} "
-        f"queries={int(recall.get('num_queries', 0))}"
-    )
+    print(f"Training complete. Resulting Embedding:")
+    print(embedding)
 
 
 def _recommend(config: Config, args: argparse.Namespace) -> None:
@@ -102,18 +130,28 @@ def _recommend(config: Config, args: argparse.Namespace) -> None:
 
     recommendations = recommend_games(
         embedding=embedding,
-        liked_game_names=args.liked_games,
+        liked_games=args.liked_games,
         player_count=args.player_count,
-        available_time_minutes=args.available_time,
+        available_time_minutes=args.available_time_minutes,
         amount=args.amount,
         config=config.recommendation,
     )
 
-    print(f"Recommendations from run {run_id}:")
-    for idx, rec in enumerate(recommendations, start=1):
+    # Column width for nice alignment
+    name_width = max(len(rec["name"]) for rec in recommendations)
+
+    print("Rank  Name".ljust(name_width + 10) + "Score    Rating   Time")
+    print("-" * (name_width + 10 + 25))
+
+    for index, rec in enumerate(recommendations, start=1):
+        name = rec.get("name", "<unknown>")
+        score = rec.get("score", 0.0)
+        rating = rec.get("avg_rating", 0.0)
+        time = rec.get("playing_time", "?")
+
         print(
-            f"- {idx}. {rec['name']} "
-            f"(score={rec['score']:.3f}, rating={rec['avg_rating']:.2f}, time={rec['playing_time']})"
+            f"{index:>4}. {name.ljust(name_width)}  "
+            f"{score:>6.3f}   {rating:>6.2f}   {time}"
         )
 
 
@@ -170,9 +208,9 @@ def main(argv: Sequence[str]) -> None:
 
     r = subparsers.add_parser("recommend", help="Generate recommendations.")
     r.add_argument("--run", dest="run_identifier", required=True)
-    r.add_argument("--liked", nargs="+", required=True)
-    r.add_argument("--players", type=int, required=True)
-    r.add_argument("--time", dest="available_time", type=int, required=True)
+    r.add_argument("--liked", dest="liked_games", nargs="+", required=True)
+    r.add_argument("--players", dest="player_count", type=int, required=True)
+    r.add_argument("--time", dest="available_time_minutes", type=int, required=True)
     r.add_argument("--amount", type=int, default=5)
     r.set_defaults(func=_recommend)
 

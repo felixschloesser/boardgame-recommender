@@ -13,6 +13,7 @@ import tomllib
 
 class PathsConfig(BaseModel):
     raw_data_directory: Path
+    english_stopwords_file: Path
     domain_stopwords_file: Path
     processed_features_file: Path
     embeddings_directory: Path
