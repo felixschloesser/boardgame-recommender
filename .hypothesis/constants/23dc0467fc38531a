@@ -1,4 +1,0 @@
-# file: /Users/tintin/Developer/boardgame-reccomender/src/boardgame_recommender/main.py
-# hypothesis_version: 6.148.1
-
-[0.0, '+', '-', '--amount', '--config', '--force', '--liked', '--players', '--run', '--time', '--verbose', '-c', '-v', '<unknown>', '?', 'Aborted.', 'Continue? [y/N]: ', 'Process raw dataset.', 'Rank  Name', 'Train the model.', 'Workspace cleaned.', 'avg_rating', 'clean', 'command', 'config.toml', 'count', 'liked_games', 'metadata.json', 'name', 'player_count', 'playing_time', 'preprocess', 'recommend', 'run_identifier', 'score', 'store_true', 'train', 'utf-8', 'vectors.parquet', 'y']

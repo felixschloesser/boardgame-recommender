@@ -1,4 +1,0 @@
-# file: /Users/tintin/Developer/boardgame-reccomender/src/boardgame_recommender/pipelines/preprocessing.py
-# hypothesis_version: 6.148.1
-
-[0.0, 1.0, ', ', '-', '/', 'AvgRating', 'BGGId', 'Cat:', 'ComAgeRec', 'ComMaxPlaytime', 'ComMinPlaytime', 'Description', 'GameWeight', 'MaxPlayers', 'MfgPlaytime', 'MinPlayers', 'Name', 'NumUserRatings', 'YearPublished', "[a-z0-9']+", '\\s+', 'age_recommendation', 'avg_rating', 'bgg_id', 'cat_', 'categories', 'category', 'complexity', 'description', 'filters', 'flag', 'games.csv', 'generated_at', 'left', 'max_players', 'max_required_players', 'max_year', 'mechanics', 'mechanics.csv', 'median', 'mfg_playtime', 'min_avg_rating', 'min_players', 'name', 'num_user_ratings', 'playing_time_minutes', 'removed', 'rows_after_filters', 'source_rows', 'std', 'subcategories', 'subcategories.csv', 'tag', 'themes', 'themes.csv', 'threshold', 'value', 'year_published']

@@ -1,4 +1,0 @@
-# file: /Users/tintin/Developer/boardgame-reccomender/src/boardgame_recommender/pipelines/training.py
-# hypothesis_version: 6.148.1
-
-[1.0, '%Y%m%d_%H%M%S', 'Training embedding', '_', 'avg_rating', 'bgg_id', 'cat_', 'categorical', 'categories', 'config', 'created_at', 'csr', 'description', 'embedding_columns', 'feature_schema', 'float64', 'horizontal', 'l2', 'max_players', 'mechanics', 'min_players', 'name', 'num_', 'numeric', 'playing_time_minutes', 'row_count', 'run_identifier', 'stage', 'taste_dimensions', 'text', 'text_', 'themes', 'training_config']

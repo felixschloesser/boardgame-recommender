@@ -1,4 +1,0 @@
-# file: /Users/tintin/Developer/boardgame-reccomender/src/boardgame_recommender/recommend.py
-# hypothesis_version: 6.148.1
-
-[0.0, 'Missing liked games', 'auto', 'avg_rating', 'embedding_columns', 'max', 'max_players', 'mean', 'min_players', 'name', 'playing_time', 'playing_time_minutes', 'score', 'taste_']
