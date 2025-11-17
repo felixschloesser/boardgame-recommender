@@ -137,6 +137,12 @@ def _recommend(config: Config, args: argparse.Namespace) -> None:
         config=config.recommendation,
     )
 
+    if not recommendations:
+        print(
+            "No games matched your filters; try fewer liked titles or broader time limits."
+        )
+        return
+
     # Column width for nice alignment
     name_width = max(len(rec["name"]) for rec in recommendations)
 

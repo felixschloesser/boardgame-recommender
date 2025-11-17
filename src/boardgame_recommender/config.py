@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import List, Tuple
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 import tomllib
 
 
@@ -131,6 +131,10 @@ class RecommendationConfig(BaseModel):
 # --------------------------------------
 
 
+class RandomnessConfig(BaseModel):
+    seed: int
+
+
 class LoggingConfig(BaseModel):
     level: str
 
@@ -141,26 +145,12 @@ class LoggingConfig(BaseModel):
 
 
 class Config(BaseModel):
-    random: dict
+    random: RandomnessConfig
     logging: LoggingConfig
     paths: PathsConfig
     preprocessing: PreprocessingConfig
     training: TrainingConfig
     recommendation: RecommendationConfig
-
-    @model_validator(mode="after")
-    def resolve_relative_paths(self):
-        """
-        Converts all relative paths to absolute paths based on the config file location.
-        """
-        base = Path(self.__config_file_dir)  # set dynamically in loader
-
-        self.paths.raw_data_directory = base / self.paths.raw_data_directory
-        self.paths.domain_stopwords_file = base / self.paths.domain_stopwords_file
-        self.paths.processed_features_file = base / self.paths.processed_features_file
-        self.paths.embeddings_directory = base / self.paths.embeddings_directory
-
-        return self
 
 
 # --------------------------------------
@@ -168,13 +158,32 @@ class Config(BaseModel):
 # --------------------------------------
 
 
+def _resolve_path(base: Path, value: Path) -> Path:
+    """Resolve `value` relative to `base` if it is not already absolute."""
+
+    return value if value.is_absolute() else (base / value).resolve()
+
+
 def load_config(path: str) -> Config:
     path = Path(path)
     data = tomllib.loads(path.read_text("utf-8"))
-
-    # Inject config directory into instance for model validator
     config = Config.model_validate(data)
-    config.__config_file_dir = str(path.parent)
 
-    # Re-run validator now that the directory is available
-    return config.resolve_relative_paths()
+    base = path.parent.resolve()
+    config.paths.raw_data_directory = _resolve_path(
+        base, config.paths.raw_data_directory
+    )
+    config.paths.english_stopwords_file = _resolve_path(
+        base, config.paths.english_stopwords_file
+    )
+    config.paths.domain_stopwords_file = _resolve_path(
+        base, config.paths.domain_stopwords_file
+    )
+    config.paths.processed_features_file = _resolve_path(
+        base, config.paths.processed_features_file
+    )
+    config.paths.embeddings_directory = _resolve_path(
+        base, config.paths.embeddings_directory
+    )
+
+    return config
