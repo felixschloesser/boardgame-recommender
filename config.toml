@@ -1,78 +1,106 @@
-[random]
-seed = 42
-
-[logging]
-level = "INFO"
+random_seed = 42
+logging_level = "INFO"
 
 [paths]
+stopwords_file = "data/stopwords.txt"
+synonyms_file = "data/synonyms.toml"
 raw_data_directory = "data/raw"
-english_stopwords_file = "data/stopwords/english.txt"
-domain_stopwords_file = "data/stopwords/boardgame.txt"
-processed_features_file = "data/processed/boardgames.parquet"
+processed_features_directory = "data/processed"
 embeddings_directory = "data/embeddings"
 
 
-[preprocessing]
-cutoff_metric = "num_user_ratings"
-cutoff_quantile = 0.40
-
+[preprocessing.filters]
+max_year = 2020                 # Exclude very new games lacking enough ratings
+min_popularity_quantile = 0.30  # Drop the least popular 30% of games
+min_avg_rating = 5.5            # Drop very poorly rated games
+max_required_players = 6        # Drop games that require 6+ players
+max_playing_time_minutes = 210  # Drop extremely long games
 
 
 [preprocessing.features]
-text.columns = [
-    "description",
-]
+text = ["description"]
+categorical = ["mechanics", "categories", "themes"]
+numeric = ["avg_rating", "min_players", "max_players", "complexity", "age_recommendation",
+"num_user_ratings", "year_published", "playing_time_minutes"]
 
-categorical.columns = [
-    "mechanics",
-    "categories",
-    "themes",
-]
-
-[preprocessing.features.numeric.normal]
-# Including the rating here may cause the recommender to trivially recommend the highest rated games.
-columns = ["avg_rating", "min_players", "max_players", "complexity"]
-normalization_strategy = "min-max"
-
-[preprocessing.features.numeric.heavy_tail]
-columns = ["num_user_ratings", "year_published", "playing_time_minutes"]
-normalization_strategy = "robust"
 
 [preprocessing.features.weights]
-description = 1.0
-mechanics = 0.8
-categories = 0.8
-themes = 0.6
-numeric = 0.7
+description = 1.0    # What the game is about
+mechanics = 0.8      # How the game works
+categories = 0.8     # What type of game it is
+themes = 0.6         # The setting or story
+numeric = 0.7        # Player counts, complexity, etc.
 
 [preprocessing.tokenization]
-vocabulary_deduplication = true
-remove_english_stopwords = true
-allowed_stopwords = ["not", "no", "without"] # Preserve negations
-remove_domain_stopwords = true
+# Normalize equivalent phrases so descriptions use a consistent vocabulary
+# (e.g., "deck builder" → "deckbuilding"; "co-op" → "cooperative")
+unify_synonyms = true
+
+# Remove extremely common board-game terms that add no discriminative value
+# (e.g., "game", "players", "board", "turn") to emphasize distinctive concepts
+remove_common_domain_words = true
+
+# Extract both single words and common two-word expressions
+# (e.g., "area control", "worker placement") to capture domain-specific concepts
 ngram_range = [1, 2]
 
 
-[training]
-show_progress = true
 
-[training.svd]
-tag_vectorization_strategy = "multi-hot"
-text_vectorization_strategy = "tf-idf"
-latent_dimension_strategy = "fixed"
-latent_dimensions = 300
+[training.text_vectorization]
+# Drop terms that appear in fewer than this many game descriptions (removes typos and noise)
+min_document_occurrences = 3
 
-normalization_strategy = "l2"
-iterations = 10
-
-[training.tfidf]
-min_document_occurences = 3
+# Ignore terms that appear in more than this proportion of descriptions (removes generic filler wording)
 max_document_frequency = 0.90
-max_features = 20000
-normalization_strategy = "l2"
-sublinear = true
+
+# Prevent long descriptions from overpowering short ones
+equalize_description_length = true
+
+# Reduce the influence of repeated words within a single description ("highly, highly tactical")
+downweight_repeated_terms = true
+
+
+[training.taste_model]
+# If true, all taste vectors are scaled to the same length.
+# This means similarity depends only on *which* taste patterns a game has,
+# not on how many or how strongly they are expressed.
+#
+# Leave this off unless you want the system to treat “feature-rich” games
+# (dense mechanics, many thematic elements) as not similar to each other.
+normalize_taste_vectors = false
+
+# This controls how detailed the recommendation model’s internal understanding
+# of games becomes:
+#
+#   100–200  → broad taste structure
+#              (e.g., party games vs euros vs thematic adventures)
+#
+#   300–400  → balanced detail
+#              (e.g., differentiates engine-building from tableau-building,
+#              recognizes distinct co-op subtypes, etc.)
+#
+#   500–700  → very fine-grained distinctions
+#              (captures niche mechanical patterns and rare combinations,
+#              useful only if the dataset is large and diverse)
+#
+# Lower values generalize more strongly; higher values capture more nuance
+# but require more data and can emphasize subtle patterns.
+taste_dimensions = 250
+
+
 
 [recommendation]
-preferences_vectorization_strategy = "mixture_of_centroids" # model diverse tastes
-num_centroids = 3
-min_cluster_size = 2
+# "max" = strong preferences (if a game matches any of your tastes strongly, it scores well)
+# "mean" = balanced tastes (game must match overall profile)
+similarity_aggregation = "max"
+
+# Most players like different kinds of games (e.g., heavy strategy, quick fillers,
+# thematic co-ops). If we combine all liked games into one profile, these distinct
+# tastes get averaged together and lose their meaning. Splitting into multiple
+# "taste groups" keeps each preference pattern visible, so the system can
+# recommend games that match any of the user's real interests.
+min_samples_per_centroid = 3
+# Don’t split tastes unless user likes enough games to justify it.
+dynamic_centroids = true
+centroid_scaling_factor = 0.3
+# Example: User likes 10 games → 10 * 0.3 = ~3 taste groups.

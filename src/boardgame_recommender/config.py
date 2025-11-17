@@ -1,9 +1,14 @@
-# config.py
-
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from pydantic import BaseModel, Field
 import tomllib
+
+
+PROCESSED_FEATURES_FILENAME = "boardgames.parquet"
+DATA_QUALITY_REPORT_FILENAME = "data_quality.json"
+
+EMBEDDING_VECORS_FILENAME = "vectors.parquet"
+EMBEDDING_METADATA_FILENAME = "metadata.json"
 
 
 # --------------------------------------
@@ -12,39 +17,43 @@ import tomllib
 
 
 class PathsConfig(BaseModel):
+    stopwords_file: Path
+    synonyms_file: Path
     raw_data_directory: Path
-    english_stopwords_file: Path
-    domain_stopwords_file: Path
-    processed_features_file: Path
+    processed_features_directory: Path
     embeddings_directory: Path
 
+    @property
+    def processed_features_file(self) -> Path:
+        return self.processed_features_directory / PROCESSED_FEATURES_FILENAME
+
+    @property
+    def data_quality_report_file(self) -> Path:
+        return self.processed_features_directory / DATA_QUALITY_REPORT_FILENAME
+
 
 # --------------------------------------
-# FEATURES CONFIG
+# PREPROCESSING: FILTERS
 # --------------------------------------
 
 
-class TextFeatureConfig(BaseModel):
-    columns: List[str]
+class PreprocessingFilters(BaseModel):
+    max_year: Optional[int]
+    min_popularity_quantile: float = Field(ge=0.0, le=1.0)
+    min_avg_rating: float
+    max_required_players: int
+    max_playing_time_minutes: int
 
 
-class CategoricalFeatureConfig(BaseModel):
-    columns: List[str]
+# --------------------------------------
+# FEATURES
+# --------------------------------------
 
 
-class NormalNumericFeatureConfig(BaseModel):
-    columns: List[str]
-    normalization_strategy: str
-
-
-class HeavyTailedNumericFeatureConfig(BaseModel):
-    columns: List[str]
-    normalization_strategy: str
-
-
-class NumericFeatureConfig(BaseModel):
-    normal: NormalNumericFeatureConfig
-    heavy_tail: HeavyTailedNumericFeatureConfig
+class FeaturesConfig(BaseModel):
+    text: List[str]
+    categorical: List[str]
+    numeric: List[str]
 
 
 class FeatureWeightsConfig(BaseModel):
@@ -55,64 +64,37 @@ class FeatureWeightsConfig(BaseModel):
     numeric: float
 
 
-class FeaturesConfig(BaseModel):
-    text: TextFeatureConfig
-    categorical: CategoricalFeatureConfig
-    numeric: NumericFeatureConfig
-    weights: FeatureWeightsConfig
-
-
 # --------------------------------------
 # TOKENIZATION
 # --------------------------------------
 
 
 class TokenizationConfig(BaseModel):
-    vocabulary_deduplication: bool
-    remove_english_stopwords: bool
-    allowed_stopwords: List[str]
-    remove_domain_stopwords: bool
+    unify_synonyms: bool
+    remove_common_domain_words: bool
     ngram_range: Tuple[int, int]
 
 
 # --------------------------------------
-# PREPROCESSING CONFIG
+# TEXT VECTORIZATION
 # --------------------------------------
 
 
-class PreprocessingConfig(BaseModel):
-    cutoff_metric: str
-    cutoff_quantile: float = Field(ge=0.0, le=1.0)
-    features: FeaturesConfig
-    tokenization: TokenizationConfig
-
-
-# --------------------------------------
-# TRAINING CONFIG
-# --------------------------------------
-
-
-class SVDTrainingConfig(BaseModel):
-    tag_vectorization_strategy: str
-    text_vectorization_strategy: str
-    latent_dimension_strategy: str
-    latent_dimensions: int
-    normalization_strategy: str
-    iterations: int
-
-
-class TFIDFTrainingConfig(BaseModel):
-    min_document_occurences: int
+class TextVectorizationConfig(BaseModel):
+    min_document_occurrences: int
     max_document_frequency: float
-    max_features: int
-    normalization_strategy: str
-    sublinear: bool
+    equalize_description_length: bool
+    downweight_repeated_terms: bool
 
 
-class TrainingConfig(BaseModel):
-    show_progress: bool
-    svd: SVDTrainingConfig
-    tfidf: TFIDFTrainingConfig  # FIXED: use snake_case, not "tf-idf"
+# --------------------------------------
+# TASTE MODEL
+# --------------------------------------
+
+
+class TasteModelConfig(BaseModel):
+    normalize_taste_vectors: bool
+    taste_dimensions: int
 
 
 # --------------------------------------
@@ -121,32 +103,42 @@ class TrainingConfig(BaseModel):
 
 
 class RecommendationConfig(BaseModel):
-    preferences_vectorization_strategy: str
-    num_centroids: int
-    min_cluster_size: int
+    similarity_aggregation: str
+    min_samples_per_centroid: int
+    dynamic_centroids: bool
+    centroid_scaling_factor: float
 
 
 # --------------------------------------
-# LOGGING + RANDOM SEED
+# PREPROCESSING (TOP LEVEL)
 # --------------------------------------
 
 
-class RandomnessConfig(BaseModel):
-    seed: int
-
-
-class LoggingConfig(BaseModel):
-    level: str
+class PreprocessingConfig(BaseModel):
+    filters: PreprocessingFilters
+    features: FeaturesConfig
+    feature_weights: FeatureWeightsConfig
+    tokenization: TokenizationConfig
 
 
 # --------------------------------------
-# TOP-LEVEL CONFIG
+# TRAINING
+# --------------------------------------
+
+
+class TrainingConfig(BaseModel):
+    text_vectorization: TextVectorizationConfig
+    taste_model: TasteModelConfig
+
+
+# --------------------------------------
+# FULL CONFIG
 # --------------------------------------
 
 
 class Config(BaseModel):
-    random: RandomnessConfig
-    logging: LoggingConfig
+    random_seed: int
+    logging_level: str
     paths: PathsConfig
     preprocessing: PreprocessingConfig
     training: TrainingConfig
@@ -159,8 +151,6 @@ class Config(BaseModel):
 
 
 def _resolve_path(base: Path, value: Path) -> Path:
-    """Resolve `value` relative to `base` if it is not already absolute."""
-
     return value if value.is_absolute() else (base / value).resolve()
 
 
@@ -170,17 +160,15 @@ def load_config(path: str) -> Config:
     config = Config.model_validate(data)
 
     base = path.parent.resolve()
+
+    # correct property names to match TOML
+    config.paths.stopwords_file = _resolve_path(base, config.paths.stopwords_file)
+    config.paths.synonyms_file = _resolve_path(base, config.paths.synonyms_file)
     config.paths.raw_data_directory = _resolve_path(
         base, config.paths.raw_data_directory
     )
-    config.paths.english_stopwords_file = _resolve_path(
-        base, config.paths.english_stopwords_file
-    )
-    config.paths.domain_stopwords_file = _resolve_path(
-        base, config.paths.domain_stopwords_file
-    )
-    config.paths.processed_features_file = _resolve_path(
-        base, config.paths.processed_features_file
+    config.paths.processed_features_directory = _resolve_path(
+        base, config.paths.processed_features_directory
     )
     config.paths.embeddings_directory = _resolve_path(
         base, config.paths.embeddings_directory

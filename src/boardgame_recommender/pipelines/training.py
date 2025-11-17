@@ -100,7 +100,10 @@ def _build_numeric_matrix(
             f"{', '.join(missing)}"
         )
     numeric_array = features.select(numeric_columns).to_numpy().astype(float)
-    numeric_array = np.nan_to_num(numeric_array, nan=0.0)
+    if np.isnan(numeric_array).any():
+        raise ValueError(
+            "Numeric feature matrix contains NaN values after preprocessing; check null handling."
+        )
     if weight != 1.0:
         numeric_array *= weight
     return sparse.csr_matrix(numeric_array)

@@ -1,0 +1,236 @@
+worker-placement = [
+    "worker placement",
+    "worker-placement",
+    "pawn placement"
+]
+
+deck-building = [
+    "deck building",
+    "deckbuilding",
+    "deck construction"
+]
+
+dice-rolling = [
+    "dice rolling",
+    "rolling dice"
+]
+
+roll-and-write = [
+    "roll-and-write",
+    "roll and write"
+]
+
+push-your-luck = [
+    "push your luck",
+    "press your luck"
+]
+
+pattern-building = [
+    "pattern building",
+    "pattern formation"
+]
+
+engine-building = [
+    "engine building",
+    "engine-building",
+    "progression engine"
+]
+
+area-control = [
+    "area control",
+    "area dominance",
+    "territory control"
+]
+
+set-collection = [
+    "set collection",
+    "set-collecting"
+]
+
+tile-placement = [
+    "tile placement",
+    "tile-laying",
+    "tile laying"
+]
+
+hand-management = [
+    "hand management",
+    "hand-management",
+    "hand optimization"
+]
+
+resource-management = [
+    "resource management",
+    "resource allocation"
+]
+
+storytelling = [
+    "storytelling",
+    "narrative-driven",
+    "narrative gameplay"
+]
+
+cooperative = [
+    "cooperative",
+    "co-op",
+    "cooperative play"
+]
+
+competitive = [
+    "competitive",
+    "versus play",
+    "player versus player"
+]
+
+drafting = [
+    "drafting",
+    "card drafting"
+]
+
+take-that = [
+    "take that",
+    "take-that"
+]
+
+trading = [
+    "trading",
+    "exchange trading"
+]
+
+market = [
+    "market system",
+    "market mechanism"
+]
+
+economic = [
+    "economic",
+    "economic simulation"
+]
+
+pickup-and-deliver = [
+    "pick-up-and-deliver",
+    "pick up and deliver",
+    "pickup-delivery"
+]
+
+memory = [
+    "memory mechanic",
+    "memorization mechanic"
+]
+
+deduction = [
+    "deduction",
+    "logical deduction"
+]
+
+social-deduction = [
+    "social deduction",
+    "hidden-role deduction"
+]
+
+bluffing = [
+    "bluffing",
+    "intentional deception"
+]
+
+negotiation = [
+    "negotiation",
+    "deal-making"
+]
+
+auction = [
+    "auction",
+    "bidding"
+]
+
+tactical = [
+    "tactical",
+    "tactical play"
+]
+
+strategic = [
+    "strategic",
+    "strategy-focused"
+]
+
+modular-board = [
+    "modular board",
+    "reconfigurable board"
+]
+
+fantasy = [
+    "fantasy",
+    "fantasy theme"
+]
+
+sci-fi = [
+    "science fiction",
+    "sci fi",
+    "scifi"
+]
+
+historical = [
+    "historical",
+    "history-based"
+]
+
+war = [
+    "war",
+    "wargame"
+]
+
+medieval = [
+    "medieval",
+    "middle-ages themed"
+]
+
+renaissance = [
+    "renaissance",
+    "early-modern themed"
+]
+
+horror = [
+    "horror",
+    "horror-themed"
+]
+
+mystery = [
+    "mystery",
+    "detective mystery"
+]
+
+adventure = [
+    "adventure",
+    "adventure-themed"
+]
+
+exploration = [
+    "exploration",
+    "map exploration"
+]
+
+thematic = [
+    "thematic",
+    "theme-driven"
+]
+
+abstract = [
+    "abstract",
+    "abstract strategy"
+]
+
+party = [
+    "party game",
+    "party-style game"
+]
+
+family = [
+    "family game",
+    "family-friendly"
+]
+
+two-player = [
+    "two-player",
+    "duel",
+    "1v1"
+]

@@ -90,6 +90,13 @@ data/raw/
 Configure defaults via `config.toml` (excerpt):
 
 ```toml
+[paths]
+english_stopwords_file = "data/stopwords/english.txt"
+domain_stopwords_file = "data/stopwords/boardgame.txt"
+raw_data_directory = "data/raw"
+processed_features_directory = "data/processed"
+embeddings_directory = "data/embeddings"
+
 [logging]
 level = "INFO"  # change to "DEBUG" for verbose tracing
 
@@ -97,16 +104,41 @@ level = "INFO"  # change to "DEBUG" for verbose tracing
 cutoff_metric = "num_user_ratings"
 cutoff_quantile = 0.40
 
+[preprocessing.domain_filters]
+enabled = true
+min_year = 1995
+max_year = 2020
+max_min_players = 7
+long_play_minutes = 240
+long_play_max_minutes = 480
+long_play_min_ratings = 1000
+
+[preprocessing.outlier_filtering]
+enabled = false                      # optional: opt-in IQR trimming
+columns = ["avg_rating", "min_players", "max_players", "playing_time_minutes"]
+iqr_multiplier = 1.5                 # adjust whisker sensitivity when enabled
+
 [recommendation]
 preferences_vectorization_strategy = "mixture_of_centroids"
 num_centroids = 3
 ```
+
+Preprocessing always runs two guardrails inspired by the [EDA notebook](https://github.com/richengo/Board-Games-Recommender/blob/main/code/01a_Board_Games_EDA_Cleaning.ipynb):
+
+- `[preprocessing.domain_filters]` keeps modern titles (1995–2020 by default), trims niche entries that require more than seven minimum players, and only allows extremely long games (4–8 hours) when they have at least 1k ratings. Tweak or disable this block to widen the candidate pool.
+- A light numeric sanity pass enforces hard bounds on the same numeric features (e.g., `min_players` must be between 1 and 20, play time must be < 24h).
+
+Set `[preprocessing.outlier_filtering].enabled = true` only if you want an additional IQR-based trim for the listed columns.
 
 Run preprocessing with:
 
 ```bash
 python -m boardgame_recommender preprocess
 ```
+
+This produces the curated feature store (`data/processed/boardgames.parquet`) and a
+`data/processed/data_quality.json` snapshot that captures null-counts, numeric
+ranges and duplicate tracking for auditing.
 
 ### 3. Train the embedding model
 

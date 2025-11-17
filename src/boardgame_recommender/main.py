@@ -3,9 +3,10 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import polars as pl
+import tomllib
 
 from boardgame_recommender.config import Config, load_config
 from boardgame_recommender.pipelines.preprocessing import preprocess_data
@@ -31,6 +32,18 @@ def load_stopwords(path: Path) -> set[str]:
         }
     except Exception as exc:
         raise SystemExit(f"Failed to load stopwords from {path}: {exc}")
+
+
+def load_synonyms(path: Path) -> dict[str, list[str]]:
+    try:
+        data = tomllib.loads(path.read_text("utf-8"))
+        return {
+            key: values
+            for key, values in data.items()
+            if (isinstance(values, list) and all(isinstance(v, str) for v in values))
+        }
+    except Exception as exc:
+        raise SystemExit(f"Failed to load synonyms from {path}: {exc}")
 
 
 def load_features(path: Path) -> pl.DataFrame:
@@ -105,19 +118,13 @@ def find_latest_run_identifier(path: Path) -> str:
     return latest.name
 
 
-# ----------------------
-# COMMANDS
-# ----------------------
-
-
 def _preprocess(config: Config, args: argparse.Namespace) -> None:
-    domain_stopwords = load_stopwords(config.paths.domain_stopwords_file)
-    english_stopwords = load_stopwords(config.paths.english_stopwords_file)
+    stopwords = load_stopwords(config.paths.stopwords_file)
+    synonyms = load_synonyms(config.paths.synonyms_file)
 
-    features = preprocess_data(
+    features, quality_report = preprocess_data(
         directory=config.paths.raw_data_directory,
-        english_stopwords=english_stopwords,
-        domain_stopwords=domain_stopwords,
+        stopwords=stopwords,
         config=config.preprocessing,
     )
 
@@ -125,8 +132,15 @@ def _preprocess(config: Config, args: argparse.Namespace) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     features.write_parquet(out_path)
 
+    quality_path = config.paths.data_quality_report_file
+    quality_path.parent.mkdir(parents=True, exist_ok=True)
+    quality_json = json.dumps(quality_report, indent=2)
+    quality_path.write_text(quality_json, encoding="utf-8")
+
     print(f"Processed feature dataset written to: {out_path}")
+    print(f"Data quality report written to: {quality_path}")
     print(f"Rows: {features.height:,}  Columns: {features.width:,}")
+    _print_filtering_summary(quality_report)
 
 
 def _train(config: Config, args: argparse.Namespace) -> None:
@@ -193,7 +207,7 @@ def _recommend(config: Config, args: argparse.Namespace) -> None:
 
 
 def _clean(config: Config, args: argparse.Namespace) -> None:
-    processed = config.paths.processed_features_file
+    processed_dir = config.paths.processed_features_directory
     embeddings = config.paths.embeddings_directory
 
     if not args.force:
@@ -202,8 +216,10 @@ def _clean(config: Config, args: argparse.Namespace) -> None:
             print("Aborted.")
             return
 
-    if processed.exists():
-        processed.unlink()
+    if processed_dir.exists():
+        shutil.rmtree(processed_dir)
+
+    processed_dir.mkdir(parents=True, exist_ok=True)
 
     if embeddings.exists():
         shutil.rmtree(embeddings)
