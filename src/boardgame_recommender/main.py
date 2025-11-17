@@ -74,6 +74,37 @@ def load_embedding(path: Path, run_identifier: str) -> Embedding:
     )
 
 
+def find_latest_run_identifier(path: Path) -> str:
+    """
+    Return the directory name of the most recently modified embedding run.
+    """
+    if not path.exists():
+        raise SystemExit(
+            f"Embeddings directory '{path}' does not exist. Train a model first."
+        )
+
+    candidates: list[Path] = []
+    for entry in path.iterdir():
+        if entry.is_symlink():
+            continue  # skip helpers like "latest" to avoid stale selections
+
+        if not entry.is_dir():
+            continue
+
+        vectors = entry / "vectors.parquet"
+        metadata = entry / "metadata.json"
+        if vectors.exists() and metadata.exists():
+            candidates.append(entry)
+
+    if not candidates:
+        raise SystemExit(
+            f"No completed embedding runs found in '{path}'. Train a model first."
+        )
+
+    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+    return latest.name
+
+
 # ----------------------
 # COMMANDS
 # ----------------------
@@ -82,7 +113,10 @@ def load_embedding(path: Path, run_identifier: str) -> Embedding:
 def _preprocess(config: Config, args: argparse.Namespace) -> None:
     domain_stopwords = load_stopwords(config.paths.domain_stopwords_file)
     english_stopwords = load_stopwords(config.paths.english_stopwords_file)
-    stopwords = domain_stopwords.union(english_stopwords)
+    stopwords = {
+        "domain": domain_stopwords,
+        "english": english_stopwords,
+    }
 
     features = preprocess_data(
         directory=config.paths.raw_data_directory,
@@ -121,7 +155,7 @@ def _train(config: Config, args: argparse.Namespace) -> None:
 
 def _recommend(config: Config, args: argparse.Namespace) -> None:
     embeddings_dir = config.paths.embeddings_directory
-    run_id = args.run_identifier
+    run_id = args.run_identifier or find_latest_run_identifier(embeddings_dir)
 
     try:
         embedding = load_embedding(embeddings_dir, run_id)
@@ -213,7 +247,11 @@ def main(argv: Sequence[str]) -> None:
     t.set_defaults(func=_train)
 
     r = subparsers.add_parser("recommend", help="Generate recommendations.")
-    r.add_argument("--run", dest="run_identifier", required=True)
+    r.add_argument(
+        "--run",
+        dest="run_identifier",
+        help="Embedding run identifier. Defaults to the latest completed run.",
+    )
     r.add_argument("--liked", dest="liked_games", nargs="+", required=True)
     r.add_argument("--players", dest="player_count", type=int, required=True)
     r.add_argument("--time", dest="available_time_minutes", type=int, required=True)

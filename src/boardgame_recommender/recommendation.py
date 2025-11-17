@@ -1,310 +1,184 @@
-import json
-import logging
+from __future__ import annotations
+
 import math
-from pathlib import Path
 from typing import Any, Sequence
 
-import joblib
 import numpy as np
 import polars as pl
 
-logger = logging.getLogger(__name__)
+from boardgame_recommender.config import RecommendationConfig
+from boardgame_recommender.pipelines.training import Embedding
 
 
-def _resolve_run_directory(
-    artifacts_directory: Path, run_identifier: str | None
-) -> Path:
-    """Resolve which trained run directory to use for inference."""
-
-    artifacts_directory = Path(artifacts_directory)
-    if run_identifier:
-        run_directory = artifacts_directory / run_identifier
-        if not run_directory.exists():
-            raise FileNotFoundError(f"Unknown run id {run_identifier}")
-        logger.debug(
-            "Using explicit run id %s to reproduce a specific training snapshot",
-            run_identifier,
-        )
-        return run_directory
-
-    latest_symlink = artifacts_directory / "latest"
-    if latest_symlink.exists():
-        logger.debug("Falling back to latest symlink for freshly trained artifacts")
-        return latest_symlink.resolve()
-    latest_txt = artifacts_directory / "latest.txt"
-    if latest_txt.exists():
-        candidate = artifacts_directory / latest_txt.read_text(encoding="utf-8").strip()
-        if candidate.exists():
-            logger.debug(
-                "Latest symlink missing; using textual pointer to preserve last successful run"
-            )
-            return candidate
-
-    run_directories = sorted(
-        [path for path in artifacts_directory.iterdir() if path.is_dir()],
-        reverse=True,
-    )
-    if not run_directories:
-        raise FileNotFoundError("No trained runs found.")
-    logger.debug("No pointers available; defaulting to most recent run.")
-    return run_directories[0]
-
-
-def load_artifacts(
-    models_directory: Path, run_identifier: str | None = None
-) -> tuple[Path, dict[str, Any], pl.DataFrame, dict[str, Any]]:
-    """Load serialized artifacts (embedding, metadata) for a given run."""
-
-    run_directory = _resolve_run_directory(models_directory, run_identifier)
-    logger.debug(
-        "Loading inference artifacts from %s to align with preprocessing/training config",
-        run_directory,
-    )
-    bundle = joblib.load(run_directory / "model.pkl")
-    catalog = pl.read_parquet(run_directory / "embeddings.parquet")
-    metadata_path = run_directory / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    return run_directory, bundle, catalog, metadata
-
-
-def _levenshtein_distance(left_text: str, right_text: str) -> int:
-    """Compute Levenshtein edit distance between two strings."""
-
-    left_text = left_text.lower()
-    right_text = right_text.lower()
-    if left_text == right_text:
+def _levenshtein(left: str, right: str) -> int:
+    if left == right:
         return 0
-    if not left_text:
-        return len(right_text)
-    if not right_text:
-        return len(left_text)
-
-    if len(left_text) < len(right_text):
-        left_text, right_text = right_text, left_text
-
-    previous_row = list(range(len(right_text) + 1))
-    for row_index, left_character in enumerate(left_text, start=1):
-        current_row = [row_index]
-        for column_index, right_character in enumerate(right_text, start=1):
-            insertions = previous_row[column_index] + 1
-            deletions = current_row[column_index - 1] + 1
-            substitutions = previous_row[column_index - 1] + (
-                left_character != right_character
-            )
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+    previous_row = list(range(len(right) + 1))
+    for i, char_left in enumerate(left, start=1):
+        current_row = [i]
+        for j, char_right in enumerate(right, start=1):
+            insertions = previous_row[j] + 1
+            deletions = current_row[j - 1] + 1
+            substitutions = previous_row[j - 1] + (char_left != char_right)
             current_row.append(min(insertions, deletions, substitutions))
         previous_row = current_row
     return previous_row[-1]
 
 
-def _suggest_similar_names(
-    target_game_name: str,
-    catalog_game_names: Sequence[str],
-    maximum_suggestions: int = 3,
-) -> list[str]:
-    """Suggest catalog names that are closest to the provided target string."""
-
-    distances: list[tuple[int, str]] = []
-    for candidate_name in catalog_game_names:
-        if candidate_name is None:
-            continue
-        distance_value = _levenshtein_distance(target_game_name, candidate_name)
-        distances.append((distance_value, candidate_name))
-    distances.sort(key=lambda item: (item[0], item[1].lower()))
-    return [name for _, name in distances[:maximum_suggestions]]
+def _suggestions(target: str, candidates: Sequence[str], limit: int = 3) -> list[str]:
+    normalized = [
+        (candidate, _levenshtein(target.lower(), candidate.lower()))
+        for candidate in candidates
+        if isinstance(candidate, str) and candidate
+    ]
+    ranked = sorted(normalized, key=lambda item: item[1])
+    return [name for name, _ in ranked[:limit]]
 
 
-def _format_missing_message(
-    missing_names: Sequence[str],
-    catalog_game_names: Sequence[str],
-    message_prefix: str,
-) -> str:
-    """Build an actionable error message when liked titles are absent."""
-
-    message_parts = []
-    for name in missing_names:
-        suggestions = _suggest_similar_names(name, catalog_game_names)
-        if suggestions:
-            message_parts.append(f"'{name}' (closest match: {', '.join(suggestions)})")
+def _format_missing(names: Sequence[str], catalog: Sequence[str], prefix: str) -> str:
+    fragments = []
+    for name in names:
+        nearest = _suggestions(name, catalog)
+        if nearest:
+            fragments.append(f"'{name}' (closest: {', '.join(nearest)})")
         else:
-            message_parts.append(f"'{name}'")
-    formatted = "; ".join(message_parts)
-    return (
-        f"{message_prefix}: {formatted}. "
-        "Adjust the inputs or retrain with the desired titles."
-    )
+            fragments.append(f"'{name}'")
+    joined = "; ".join(fragments)
+    return f"{prefix}: {joined}"
+
+
+def _embedding_columns(frame: pl.DataFrame) -> list[str]:
+    columns = [column for column in frame.columns if column.startswith("svd_")]
+    if not columns:
+        raise ValueError("Embedding vectors are missing SVD columns (svd_*)")
+    return columns
+
+
+def _build_preference_vectors(
+    liked_matrix: np.ndarray,
+    config: RecommendationConfig,
+) -> np.ndarray:
+    if liked_matrix.size == 0:
+        raise ValueError("The liked games could not be mapped to embedding vectors.")
+    strategy = config.preferences_vectorization_strategy.lower()
+    if strategy == "mixture_of_centroids" and liked_matrix.shape[0] >= config.min_cluster_size:
+        cluster_count = min(config.num_centroids, liked_matrix.shape[0])
+        if cluster_count < 1:
+            return liked_matrix
+        if cluster_count == 1:
+            return liked_matrix.mean(axis=0, keepdims=True)
+        return _run_kmeans(liked_matrix, cluster_count)
+    return liked_matrix.mean(axis=0, keepdims=True)
+
+
+def _run_kmeans(data: np.ndarray, cluster_count: int, iterations: int = 20) -> np.ndarray:
+    rng = np.random.default_rng(0)
+    centroids = data[rng.choice(data.shape[0], cluster_count, replace=False)]
+    for _ in range(iterations):
+        distances = np.linalg.norm(data[:, None, :] - centroids[None, :, :], axis=2)
+        labels = distances.argmin(axis=1)
+        updated = centroids.copy()
+        for index in range(cluster_count):
+            members = data[labels == index]
+            if members.size == 0:
+                continue
+            updated[index] = members.mean(axis=0)
+        if np.allclose(updated, centroids):
+            break
+        centroids = updated
+    return centroids
+
+
+def _cosine_similarity(
+    candidate_matrix: np.ndarray,
+    preference_vectors: np.ndarray,
+) -> np.ndarray:
+    candidate_norms = np.linalg.norm(candidate_matrix, axis=1, keepdims=True)
+    candidate_norms[candidate_norms == 0] = 1.0
+    preference_norms = np.linalg.norm(preference_vectors, axis=1, keepdims=True)
+    preference_norms[preference_norms == 0] = 1.0
+    normalized_candidates = candidate_matrix / candidate_norms
+    normalized_preferences = preference_vectors / preference_norms
+    scores = normalized_candidates @ normalized_preferences.T
+    return scores.max(axis=1)
 
 
 def recommend_games(
-    catalog_with_embeddings: pl.DataFrame,
-    liked_game_names: Sequence[str],
+    embedding: Embedding,
+    liked_games: Sequence[str],
     player_count: int,
     available_time_minutes: int,
-    top_recommendation_count: int = 5,
+    amount: int,
+    config: RecommendationConfig,
 ) -> list[dict[str, Any]]:
-    """Return top-N recommendations filtered by constraints using k-NN cosine scoring."""
+    """
+    Rank candidate games using cosine similarity between item and preference vectors.
+    """
 
-    # Return immediately so the CLI produces an empty list instead of vague errors
-    # when the user has not trained the model yet.
-    if catalog_with_embeddings.is_empty():
-        logger.debug(
-            "Catalog is empty; returning no recommendations to avoid misleading blanks"
-        )
+    if not liked_games:
+        raise ValueError("Provide at least one liked game to generate recommendations.")
+
+    vectors = embedding.vectors
+    if vectors.is_empty():
         return []
 
-    # Only the embedding vectors describe semantic similarity, so isolate the
-    # SVD-derived columns regardless of future schema changes.
-    embedding_columns = [
-        column
-        for column in catalog_with_embeddings.columns
-        if column.startswith("svd_")
-    ]
-    # Without embeddings we cannot score neighbors at all, so fail loudly to
-    # remind the user to retrain after schema modifications.
-    if not embedding_columns:
-        raise ValueError("Catalog is missing embedding columns (svd_*)")
-
-    liked_embedding_vectors: np.ndarray | None = None
-
-    def _apply_similarity_scoring(candidate_frame: pl.DataFrame) -> pl.DataFrame:
-        # Allow earlier filters to remove all candidates without breaking
-        # subsequent logic; downstream code expects a frame in return.
-        if candidate_frame.is_empty():
-            return candidate_frame
-
-        # When liked games are absent (e.g., validation errors already raised)
-        # still produce deterministic zero scores instead of None values.
-        if liked_embedding_vectors is None or liked_embedding_vectors.size == 0:
-            zero_scores = np.zeros(candidate_frame.height, dtype=float)
-            return candidate_frame.with_columns(
-                [
-                    pl.Series("similarity", zero_scores),
-                    pl.Series("score", zero_scores),
-                ]
-            )
-
-        # Convert to numpy once so we can leverage fast linear algebra for all
-        # candidates rather than per-row operations in Polars.
-        candidate_matrix = candidate_frame.select(embedding_columns).to_numpy()
-        candidate_norms = np.linalg.norm(candidate_matrix, axis=1, keepdims=True)
-        candidate_norms[candidate_norms == 0] = 1.0
-        liked_norms = np.linalg.norm(liked_embedding_vectors, axis=1)
-        liked_norms[liked_norms == 0] = 1.0
-
-        # Cosine similarity gives direction-only proximity, which works well for
-        # embedding vectors whose magnitudes may vary between games.
-        similarity_matrix = candidate_matrix @ liked_embedding_vectors.T
-        similarity_matrix = similarity_matrix / candidate_norms
-        similarity_matrix = similarity_matrix / liked_norms[np.newaxis, :]
-
-        # Each candidate only needs its best match among liked games, so collapse
-        # the matrix to a single score per row.
-        best_neighbor = similarity_matrix.max(axis=1)
-        return candidate_frame.with_columns(
-            [
-                pl.Series("similarity", best_neighbor),
-                pl.Series("score", best_neighbor),
-            ]
+    embedding_columns = _embedding_columns(vectors)
+    catalog_names = vectors["name"].to_list()
+    liked_frame = vectors.filter(pl.col("name").is_in(liked_games))
+    if liked_frame.is_empty():
+        raise ValueError(
+            _format_missing(liked_games, catalog_names, prefix="Liked games not found in catalog")
         )
 
-    logger.debug(
-        "Applying player/time filters so downstream scoring only considers viable matches"
-    )
-    # These filters ensure we never recommend games the user cannot play, which
-    # keeps the final ranking focused on contextually relevant options.
-    filtered_candidates = catalog_with_embeddings.filter(
+    present_liked = liked_frame["name"].to_list()
+    missing_subset = [name for name in liked_games if name not in present_liked]
+    if missing_subset:
+        raise ValueError(
+            _format_missing(
+                missing_subset,
+                catalog_names,
+                prefix="Some liked games are not part of the trained catalog",
+            )
+        )
+
+    liked_matrix = liked_frame.select(embedding_columns).to_numpy()
+    preference_vectors = _build_preference_vectors(liked_matrix, config)
+
+    filtered = vectors.filter(
         (pl.col("min_players") <= player_count)
         & (pl.col("max_players") >= player_count)
         & (pl.col("playing_time_minutes") <= available_time_minutes)
+        & (~pl.col("name").is_in(liked_games))
     )
-    if filtered_candidates.is_empty():
-        logger.debug("No titles satisfy the contextual constraints; exiting early")
+    if filtered.is_empty():
         return []
 
-    # Keep the full list of names to build better error messages if a liked
-    # title is missing from the catalog.
-    catalog_game_names = catalog_with_embeddings["name"].to_list()
-    liked_rows = catalog_with_embeddings.filter(pl.col("name").is_in(liked_game_names))
-    if liked_rows.is_empty():
-        logger.debug(
-            "Liked set missing in catalog; surfacing suggestions for user correction"
-        )
-        message = _format_missing_message(
-            liked_game_names,
-            catalog_game_names,
-            message_prefix="None of the liked games were found",
-        )
-        raise ValueError(message)
+    candidate_matrix = filtered.select(embedding_columns).to_numpy()
+    scores = _cosine_similarity(candidate_matrix, preference_vectors)
 
-    # Users commonly mistype one of several liked games; fail loudly so they
-    # can correct the inputs instead of silently ignoring those titles.
-    present_liked_names = set(liked_rows["name"].to_list())
-    missing_subset = [
-        name for name in liked_game_names if name not in present_liked_names
-    ]
-    if missing_subset:
-        logger.debug(
-            "Subset of liked titles not in catalog; forcing failure to avoid silent drops"
-        )
-        message = _format_missing_message(
-            missing_subset,
-            catalog_game_names,
-            message_prefix="Some liked games are missing from the catalog",
-        )
-        raise ValueError(message)
-
-    # Extract the liked-game embeddings once so the scoring helper can reuse
-    # them for every candidate row.
-    liked_embedding_vectors = liked_rows.select(embedding_columns).to_numpy()
-
-    scored_candidates = _apply_similarity_scoring(filtered_candidates)
-
-    # Never surface the original liked games; the purpose is to find adjacent
-    # titles, not to echo the input back to the user.
-    filtered_candidates = scored_candidates.filter(
-        ~pl.col("name").is_in(liked_game_names)
-    )
-    if filtered_candidates.is_empty():
-        logger.debug(
-            "All scored candidates overlap with liked games; nothing left to recommend"
-        )
-        return []
-
-    logger.debug(
-        "Ranking %d candidates by cosine similarity and keeping top %d for presentation",
-        filtered_candidates.height,
-        top_recommendation_count,
-    )
-    # Present the highest-scoring items first and respect the user-requested
-    # limit, mirroring conventional kNN top-k behavior.
-    filtered_candidates = filtered_candidates.sort("score", descending=True).head(
-        top_recommendation_count
-    )
+    scored = filtered.with_columns(
+        pl.Series("score", scores),
+    ).sort("score", descending=True).head(amount)
 
     recommendations: list[dict[str, Any]] = []
-    for row in filtered_candidates.to_dicts():
+    for row in scored.to_dicts():
         playing_time_value = row.get("playing_time_minutes")
-        if playing_time_value is None:
+        if playing_time_value is None or math.isnan(float(playing_time_value)):
             playing_time = None
-        elif isinstance(playing_time_value, (int, float)) and not math.isnan(
-            float(playing_time_value)
-        ):
-            playing_time = int(playing_time_value)
         else:
-            playing_time = None
+            playing_time = int(playing_time_value)
         recommendations.append(
             {
-                "name": row["name"],
-                "score": float(row["score"]),
-                "similarity": float(row["similarity"]),
-                "avg_rating": float(row["avg_rating"]),
+                "name": row.get("name"),
+                "score": float(row.get("score", 0.0)),
+                "avg_rating": float(row.get("avg_rating", 0.0)),
                 "playing_time": playing_time,
-                "min_players": int(row["min_players"])
-                if row.get("min_players") is not None
-                else None,
-                "max_players": int(row["max_players"])
-                if row.get("max_players") is not None
-                else None,
+                "min_players": int(row["min_players"]) if row.get("min_players") is not None else None,
+                "max_players": int(row["max_players"]) if row.get("max_players") is not None else None,
             }
         )
-
     return recommendations

@@ -1,14 +1,10 @@
-"""Model training pipeline."""
+from __future__ import annotations
 
-import json
 import logging
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Iterable, cast
+from typing import Any, Iterable
 
-import joblib
 import numpy as np
 import polars as pl
 from scipy import sparse
@@ -17,326 +13,219 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm.auto import tqdm
 
 from boardgame_recommender.config import Config
-from boardgame_recommender.pipelines.preprocessing import (
-    normalized_numeric_columns,
-)
+from boardgame_recommender.pipelines.preprocessing import normalized_numeric_columns
 
 logger = logging.getLogger(__name__)
 
 
-class Embedding:
-    def __init__(self, run_identifier, vectors, metadata):
-        self.run_identifier = run_identifier
-        self.vectors = vectors
-        self.metadata = metadata
-
-    @property
-    def row_count(self):
-        return self.vectors.height
-
-    @property
-    def feature_dimension(self):
-        return len(self.vectors.columns)
-
-
 @dataclass
-class TrainingArtifacts:
-    """Bundle describing a finished training run and its exported paths."""
-
+class Embedding:
     run_identifier: str
-    run_directory: Path
-    model_path: Path
-    catalog_path: Path
-    metadata_path: Path
-    row_count: int
-    feature_dimension: int
-    evaluation: dict[str, dict[str, float]] | None = None
+    vectors: pl.DataFrame
+    metadata: dict[str, Any]
 
-
-def _build_text_series(
-    data_frame: pl.DataFrame, column_names: Iterable[str]
-) -> list[str]:
-    """Collapse multiple string columns into a normalized text blob per row."""
-
-    if not column_names:
-        return [""] * data_frame.height
-    subset_frame = data_frame.select(
-        [pl.col(column_name).fill_null("").cast(str) for column_name in column_names]
-    )
-    concatenated_frame = subset_frame.select(
-        pl.concat_str(
-            [pl.col(column) for column in subset_frame.columns], separator=" "
+    def __str__(self) -> str:
+        return (
+            f"Embedding(run_id={self.run_identifier}, "
+            f"rows={self.vectors.height}, "
+            f"dimensions={self.metadata.get('feature_dimension')})"
         )
-        .str.replace(r"\s+", " ")
-        .str.strip_chars()
-        .alias("text_blob")
+
+
+def _non_empty_strings(values: Iterable[str | None]) -> list[str]:
+    cleaned: list[str] = []
+    for value in values:
+        cleaned.append(value.strip() if isinstance(value, str) else "")
+    return cleaned
+
+
+def _vectorize_column(
+    series: pl.Series,
+    tfidf_config,
+    ngram_range: tuple[int, int],
+) -> sparse.csr_matrix | None:
+    values = _non_empty_strings(series.to_list())
+    if not any(value for value in values):
+        return None
+    vectorizer = TfidfVectorizer(
+        min_df=tfidf_config.min_document_occurences,
+        max_df=tfidf_config.max_document_frequency,
+        max_features=tfidf_config.max_features,
+        norm=tfidf_config.normalization_strategy,
+        sublinear_tf=tfidf_config.sublinear,
+        ngram_range=ngram_range,
     )
-    return concatenated_frame.to_series().to_list()
-
-
-def _ensure_latest_symlink(run_directory: Path) -> None:
-    """Point ``latest`` helper symlink at the most recent run directory."""
-
-    latest_symlink_path = run_directory.parent / "latest"
     try:
-        if latest_symlink_path.exists() or latest_symlink_path.is_symlink():
-            if latest_symlink_path.is_dir() and not latest_symlink_path.is_symlink():
-                for child in latest_symlink_path.iterdir():
-                    if child.is_file() or child.is_symlink():
-                        child.unlink()
-                latest_symlink_path.rmdir()
-            else:
-                latest_symlink_path.unlink()
-        latest_symlink_path.symlink_to(run_directory, target_is_directory=True)
-    except OSError:
-        (run_directory.parent / "latest.txt").write_text(
-            run_directory.name, encoding="utf-8"
+        matrix = vectorizer.fit_transform(values)
+    except ValueError:
+        return None
+    return sparse.csr_matrix(matrix)
+
+
+def _build_text_matrix(
+    features: pl.DataFrame,
+    column_names: list[str],
+    tfidf_config,
+    token_config,
+    weights_lookup: dict[str, float],
+) -> sparse.csr_matrix | None:
+    blocks: list[sparse.csr_matrix] = []
+    for column in column_names:
+        if column not in features.columns:
+            logger.warning("Text column '%s' missing; skipping", column)
+            continue
+        block = _vectorize_column(features[column], tfidf_config, token_config.ngram_range)
+        if block is None:
+            continue
+        weight = weights_lookup.get(column, 1.0)
+        if weight != 1.0:
+            block = block.multiply(weight)
+        blocks.append(block)
+    if not blocks:
+        return None
+    return sparse.hstack(blocks).tocsr()
+
+
+def _build_numeric_matrix(
+    features: pl.DataFrame,
+    numeric_columns: list[str],
+    weight: float,
+) -> sparse.csr_matrix | None:
+    if not numeric_columns:
+        return None
+    missing = [column for column in numeric_columns if column not in features.columns]
+    if missing:
+        raise ValueError(
+            "Preprocessed dataset is missing normalized numeric columns: "
+            f"{', '.join(missing)}"
         )
+    numeric_array = features.select(numeric_columns).to_numpy().astype(float)
+    numeric_array = np.nan_to_num(numeric_array, nan=0.0)
+    if weight != 1.0:
+        numeric_array *= weight
+    return sparse.csr_matrix(numeric_array)
 
 
-def _split_tags(tag_value: str | None) -> list[str]:
-    """Return normalized tokens extracted from a comma-separated string."""
-
-    if not tag_value:
-        return []
-    return [token.strip() for token in tag_value.split(",") if token.strip()]
-
-
-def _build_similarity_groups(data_frame: pl.DataFrame) -> list[set[int]]:
-    """Build adjacency lists of games sharing category/mechanic tags."""
-
-    tag_groups: dict[str, set[int]] = defaultdict(set)
-    category_values = data_frame["categories"].fill_null("").to_list()
-    mechanic_values = data_frame["mechanics"].fill_null("").to_list()
-
-    for row_index, category_entry in enumerate(category_values):
-        for token in _split_tags(category_entry):
-            tag_groups[f"category::{token}"].add(row_index)
-    for row_index, mechanic_entry in enumerate(mechanic_values):
-        for token in _split_tags(mechanic_entry):
-            tag_groups[f"mechanic::{token}"].add(row_index)
-
-    positive_neighbor_sets: list[set[int]] = [set() for _ in range(data_frame.height)]
-    for indices in tag_groups.values():
-        if len(indices) < 2:
-            continue
-        for row_index in indices:
-            positive_neighbor_sets[row_index].update(indices - {row_index})
-    return positive_neighbor_sets
-
-
-def _calculate_recall_at_top_k(
-    embeddings: np.ndarray,
-    positive_sets: list[set[int]],
-    top_result_count: int = 10,
-) -> dict[str, float] | None:
-    """Compute recall@k style metrics using cosine similarity between vectors."""
-
-    if embeddings.size == 0:
-        return None
-
-    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    normalized = embeddings / norms
-
-    hit_count = 0
-    recall_total = 0.0
-    query_count = 0
-
-    for row_index, positive_neighbors in enumerate(positive_sets):
-        if not positive_neighbors:
-            continue
-        similarity_scores = normalized @ normalized[row_index]
-        similarity_scores[row_index] = -np.inf
-
-        if similarity_scores.shape[0] <= top_result_count:
-            top_indices = np.argsort(similarity_scores)[::-1]
-        else:
-            top_indices = np.argpartition(similarity_scores, -top_result_count)[
-                -top_result_count:
-            ]
-            top_indices = top_indices[np.argsort(similarity_scores[top_indices])[::-1]]
-
-        retrieved_indices = set(top_indices[:top_result_count])
-        matching = retrieved_indices.intersection(positive_neighbors)
-        if matching:
-            hit_count += 1
-        denominator = min(len(positive_neighbors), top_result_count)
-        if denominator > 0:
-            recall_total += len(matching) / denominator
-        query_count += 1
-
-    if query_count == 0:
-        return None
-
-    return {
-        "top_k": top_result_count,
-        "hit_rate": hit_count / query_count,
-        "mean_recall": recall_total / query_count,
-        "num_queries": query_count,
-    }
+def _base_vectors(features: pl.DataFrame) -> pl.DataFrame:
+    base_columns = [
+        column
+        for column in (
+            "bgg_id",
+            "name",
+            "avg_rating",
+            "min_players",
+            "max_players",
+            "playing_time_minutes",
+        )
+        if column in features.columns
+    ]
+    return features.select(base_columns)
 
 
 def train(
-    processed_dataset_path: Path | None,
-    configuration: Config,
-    output_directory_override: Path | None = None,
-    show_progress_bar: bool = False,
-) -> TrainingArtifacts:
-    """Build TF-IDF + SVD embeddings and persist embedding."""
+    features: pl.DataFrame,
+    config: Config,
+    show_progress: bool = False,
+) -> Embedding:
+    """
+    Train a TF-IDF + TruncatedSVD embedding over the curated feature table.
+    """
 
-    processed_path = Path(
-        processed_dataset_path or configuration.paths.processed_features
-    )
-    output_directory = Path(
-        output_directory_override or configuration.paths.models_directory
-    )
-    output_directory.mkdir(parents=True, exist_ok=True)
+    if features.is_empty():
+        raise ValueError("Cannot train on an empty dataset; run preprocessing first.")
 
-    logger.info("Loading processed dataset from %s", processed_path)
-    processed_frame = pl.read_parquet(processed_path)
-
-    total_steps = 3
-    progress_tracker = tqdm(
-        total=total_steps,
-        desc="Training pipeline (embedding)",
-        disable=not show_progress_bar,
-        unit="step",
+    progress = tqdm(
+        total=3,
+        desc="Training embedding",
+        disable=not show_progress,
+        unit="stage",
     )
 
-    logger.info(
-        "Building text series from columns: %s",
-        configuration.features.text_columns,
-    )
-    text_series = _build_text_series(
-        processed_frame, configuration.features.text_columns
-    )
-    progress_tracker.update(1)
+    preprocessing_config = config.preprocessing
+    training_config = config.training
+    tfidf_config = training_config.tfidf
+    svd_config = training_config.svd
 
-    svd_config = configuration.singular_value_decomposition
-    logger.info(
-        "Fitting TF-IDF (max_features=%s, min_df=%s) + numeric features + "
-        "TruncatedSVD (n_components=%s)",
-        svd_config.maximum_features,
-        svd_config.minimum_document_frequency,
-        svd_config.component_count,
-    )
-    text_vectorizer = TfidfVectorizer(
-        max_features=svd_config.maximum_features,
-        min_df=svd_config.minimum_document_frequency,
-    )
-    singular_value_decomposition_model = TruncatedSVD(
-        n_components=svd_config.component_count, random_state=svd_config.random_state
-    )
+    weights = preprocessing_config.features.weights
+    weights_lookup = {
+        "description": weights.description,
+        "mechanics": weights.mechanics,
+        "categories": weights.categories,
+        "themes": weights.themes,
+    }
 
-    text_matrix = text_vectorizer.fit_transform(text_series)
-    numeric_feature_names = normalized_numeric_columns(
-        configuration.features.numeric_columns
+    text_columns = list(preprocessing_config.features.text.columns)
+    categorical_columns = list(preprocessing_config.features.categorical.columns)
+    text_matrix = _build_text_matrix(
+        features,
+        [*text_columns, *categorical_columns],
+        tfidf_config,
+        preprocessing_config.tokenization,
+        weights_lookup,
     )
+    progress.update(1)
 
-    missing_numeric_columns = [
-        column_name
-        for column_name in numeric_feature_names
-        if column_name not in processed_frame.columns
+    numeric_sources: list[str] = []
+    numeric_config = preprocessing_config.features.numeric
+    numeric_sources.extend(numeric_config.normal.columns)
+    numeric_sources.extend(numeric_config.heavy_tail.columns)
+    numeric_columns = normalized_numeric_columns(numeric_sources)
+    numeric_matrix = _build_numeric_matrix(features, numeric_columns, weight=weights.numeric)
+
+    blocks = [block for block in (text_matrix, numeric_matrix) if block is not None]
+    if not blocks:
+        raise ValueError("No usable features were produced for training.")
+    feature_matrix = sparse.hstack(blocks).tocsr()
+    progress.update(1)
+
+    svd = TruncatedSVD(
+        n_components=svd_config.latent_dimensions,
+        n_iter=svd_config.iterations,
+        random_state=config.random.seed,
+    )
+    embedding_matrix = svd.fit_transform(feature_matrix)
+    progress.update(1)
+    progress.close()
+
+    embedding_columns = [
+        f"svd_{index}" for index in range(svd_config.latent_dimensions)
     ]
-    if missing_numeric_columns:
-        raise ValueError(
-            "Processed dataset missing normalized numeric columns: "
-            f"{', '.join(missing_numeric_columns)}"
-        )
-
-    combined_feature_matrix = text_matrix
-    if numeric_feature_names:
-        numeric_feature_array = (
-            processed_frame.select(numeric_feature_names).to_numpy().astype(np.float64)
-        )
-        numeric_feature_array = np.nan_to_num(numeric_feature_array, nan=0.0)
-        numeric_feature_matrix = sparse.csr_matrix(numeric_feature_array)
-        combined_feature_matrix = sparse.hstack([text_matrix, numeric_feature_matrix])
-
-    embedding_matrix = singular_value_decomposition_model.fit_transform(
-        combined_feature_matrix
+    vectors = pl.concat(
+        [
+            _base_vectors(features),
+            pl.DataFrame(embedding_matrix, schema=embedding_columns),
+        ],
+        how="horizontal",
     )
-    progress_tracker.update(1)
-
-    feature_dimension = svd_config.component_count
 
     run_identifier = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    run_directory = output_directory / run_identifier
-    run_directory.mkdir(parents=True, exist_ok=True)
-
-    model_path = run_directory / "model.pkl"
-    catalog_path = run_directory / "embeddings.parquet"
-    metadata_path = run_directory / "metadata.json"
-
-    model_components = {
-        "vectorizer": text_vectorizer,
-        "svd": singular_value_decomposition_model,
-    }
-    joblib.dump(model_components, model_path)
-
-    embedding_columns = [f"svd_{i}" for i in range(svd_config.component_count)]
-    embedding_frame = pl.DataFrame(embedding_matrix, schema=embedding_columns)
-
-    catalog_base_columns = [
-        "bgg_id",
-        "name",
-        "avg_rating",
-        "min_players",
-        "max_players",
-        "playing_time_minutes",
-        "mechanics",
-        "categories",
-    ]
-    catalog_components: list[pl.DataFrame] = [
-        processed_frame.select(catalog_base_columns),
-        embedding_frame,
-    ]
-    catalog_with_embeddings = pl.concat(catalog_components, how="horizontal")
-
-    positive_neighbor_sets = _build_similarity_groups(processed_frame)
-    recall_metrics = _calculate_recall_at_top_k(
-        embedding_matrix, positive_neighbor_sets, top_result_count=10
-    )
-
-    catalog_with_embeddings.write_parquet(catalog_path)
-
-    metadata_payload: dict[str, Any] = {
+    metadata: dict[str, Any] = {
         "run_identifier": run_identifier,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "row_count": processed_frame.height,
-        "feature_dimension": feature_dimension,
+        "row_count": features.height,
+        "feature_dimension": len(embedding_columns),
         "feature_columns": {
-            "text": configuration.features.text_columns,
-            "numeric": configuration.features.numeric_columns,
+            "text": text_columns,
+            "categorical": categorical_columns,
+            "numeric": numeric_columns,
+        },
+        "cutoff": {
+            "metric": preprocessing_config.cutoff_metric,
+            "quantile": preprocessing_config.cutoff_quantile,
         },
         "model": {
-            "type": "embedding",
-            "embedding_dimension": svd_config.component_count,
-            "vectorizer": {
-                "maximum_features": svd_config.maximum_features,
-                "minimum_document_frequency": svd_config.minimum_document_frequency,
+            "tfidf": {
+                "min_document_occurrences": tfidf_config.min_document_occurences,
+                "max_document_frequency": tfidf_config.max_document_frequency,
+                "max_features": tfidf_config.max_features,
+                "normalization": tfidf_config.normalization_strategy,
+                "sublinear_tf": tfidf_config.sublinear,
+            },
+            "svd": {
+                "latent_dimensions": svd_config.latent_dimensions,
+                "iterations": svd_config.iterations,
             },
         },
     }
-    if recall_metrics is not None:
-        metadata_payload["evaluation"] = {"recall_at_10": recall_metrics}
 
-    _ensure_latest_symlink(run_directory)
-    progress_tracker.update(1)
-    progress_tracker.close()
-
-    evaluation_data = cast(
-        dict[str, dict[str, float]] | None, metadata_payload.get("evaluation")
-    )
-
-    return TrainingArtifacts(
-        run_identifier=run_identifier,
-        run_directory=run_directory,
-        model_path=model_path,
-        catalog_path=catalog_path,
-        metadata_path=metadata_path,
-        row_count=processed_frame.height,
-        feature_dimension=feature_dimension,
-        evaluation=evaluation_data,
-    )
+    return Embedding(run_identifier=run_identifier, vectors=vectors, metadata=metadata)

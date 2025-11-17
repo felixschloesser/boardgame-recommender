@@ -1,358 +1,356 @@
+from __future__ import annotations
+
 import logging
 import math
+import re
 from pathlib import Path
-from typing import Iterable, Sequence, cast
+from typing import Iterable, Sequence
 
 import polars as pl
+
+from boardgame_recommender.config import PreprocessingConfig, TokenizationConfig
 
 logger = logging.getLogger(__name__)
 
 _SCALED_SUFFIX = "_scaled"
+_TOKEN_PATTERN = re.compile(r"[a-z0-9']+")
 
 
 def normalized_numeric_column(name: str) -> str:
-    """Return the standardized feature column name for a numeric input column."""
+    """Return the normalized column suffix used throughout the pipeline."""
 
     return f"{name}{_SCALED_SUFFIX}"
 
 
-def normalized_numeric_columns(names: list[str]) -> list[str]:
-    """Return standardized column names for each numeric feature entry."""
+def normalized_numeric_columns(names: Sequence[str]) -> list[str]:
+    """Return normalized column names for the provided numeric sources."""
 
     return [normalized_numeric_column(name) for name in names]
 
 
-def _load_one_hot_tags(
-    raw_data_directory: Path, file_name: str, column_name: str
-) -> pl.DataFrame | None:
-    """Load and melt legacy one-hot tag exports into comma separated strings."""
-
-    file_path = raw_data_directory / file_name
-    if not file_path.exists():
-        return None
-
-    tag_frame = pl.read_csv(file_path)
-    tag_columns = [column for column in tag_frame.columns if column != "BGGId"]
-    if not tag_columns:
-        return None
-
-    melted_frame = tag_frame.unpivot(
-        index=["BGGId"],
-        on=tag_columns,
-        variable_name="tag",
-        value_name="value",
-    )
-    tag_strings = (
-        melted_frame.filter(pl.col("value") == 1)
-        .group_by("BGGId")
-        .agg(pl.col("tag").sort().str.join(", "))
-        .rename({"BGGId": "bgg_id", "tag": column_name})
-    )
-    return tag_strings
-
-
-def _combine_text(
-    column_names: Iterable[str], target_alias: str, separator: str = " "
-) -> pl.Expr:
-    """Concatenate nullable text columns into a single feature column."""
-
-    expressions = [pl.col(column_name).fill_null("") for column_name in column_names]
-    if not expressions:
-        return pl.lit("").alias(target_alias)
-    return (
-        pl.concat_str(expressions, separator=separator)
-        .str.replace(r"\s+", " ")
-        .str.strip_chars()
-        .replace("", None)
-        .alias(target_alias)
-    )
-
-
-def _format_tag_tokens(tag_value: str | None, prefix: str) -> str | None:
-    """Normalize comma separated mechanic/category/theme tags to tokens."""
-
-    if not tag_value:
-        return None
-    tokens = [token.strip() for token in tag_value.split(",") if token.strip()]
-    if not tokens:
-        return None
-    normalized_tokens = [
-        f"{prefix}::{token.lower().replace(' ', '_')}" for token in tokens
-    ]
-    return " ".join(normalized_tokens)
-
-
-def _tag_text_column(column_name: str, prefix: str, alias: str) -> pl.Expr:
-    """Project multi-valued tag strings into prefixed tf-idf word buckets."""
-
-    return (
-        pl.col(column_name)
-        .map_elements(lambda value: _format_tag_tokens(value, prefix))
-        .alias(alias)
-    )
-
-
-def _append_normalized_numeric_features(
-    data_frame: pl.DataFrame, column_names: Sequence[str]
-) -> pl.DataFrame:
-    """Append z-scored numeric columns used later during training."""
-
-    expressions: list[pl.Expr] = []
-    for column_name in column_names:
-        if column_name not in data_frame.columns:
-            raise ValueError(
-                f"Missing numeric column '{column_name}' needed for normalization"
-            )
-        column_series = data_frame[column_name].cast(pl.Float64)
-        mean_value = cast(float | None, column_series.mean())
-        standard_deviation = cast(float | None, column_series.std())
-        target_name = normalized_numeric_column(column_name)
-
-        if mean_value is None or math.isnan(mean_value):
-            mean_value = 0.0
-        if (
-            standard_deviation is None
-            or standard_deviation == 0
-            or math.isnan(standard_deviation)
-        ):
-            expressions.append(pl.lit(0.0).alias(target_name))
-            continue
-
-        expressions.append(
-            (
-                (
-                    pl.col(column_name).cast(pl.Float64).fill_null(mean_value)
-                    - mean_value
-                )
-                / standard_deviation
-            ).alias(target_name)
+def _read_csv(path: Path) -> pl.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Cannot find required dataset '{path.name}' at {path}, \
+            make sure you download the BoardGameGeek exports from keggle first."
         )
-
-    if expressions:
-        data_frame = data_frame.with_columns(expressions)
-    return data_frame
+    return pl.read_csv(path)
 
 
-def _extract_categories_from_flags(
-    data_frame: pl.DataFrame,
-) -> tuple[pl.DataFrame | None, list[str]]:
-    """Convert legacy Cat:* indicator columns into sorted category strings."""
+def _load_games(directory: Path) -> pl.DataFrame:
+    games = _read_csv(directory / "games.csv")
+    rename_map = {
+        "BGGId": "bgg_id",
+        "Name": "name",
+        "Description": "description",
+        "YearPublished": "year_published",
+        "AvgRating": "avg_rating",
+        "MinPlayers": "min_players",
+        "MaxPlayers": "max_players",
+        "ComMaxPlaytime": "community_playtime",
+        "MfgPlaytime": "mfg_playtime",
+        "NumUserRatings": "num_user_ratings",
+        "GameWeight": "complexity",
+    }
+    missing_columns = [source for source in rename_map if source not in games.columns]
+    if missing_columns:
+        raise ValueError(
+            f"games.csv is missing required columns: {', '.join(sorted(missing_columns))}"
+        )
+    return games.rename(rename_map)
 
+
+def _extract_category_flags(frame: pl.DataFrame) -> pl.DataFrame:
     category_columns = [
-        column_name
-        for column_name in data_frame.columns
-        if column_name.startswith("Cat:")
+        column_name for column_name in frame.columns if column_name.startswith("Cat:")
     ]
     if not category_columns:
-        return None, []
+        return pl.DataFrame(
+            {"bgg_id": pl.Series([], dtype=pl.Int64), "categories_base": []}
+        )
 
-    category_subset = data_frame.select(["bgg_id", *category_columns])
-    melted_frame = category_subset.unpivot(
+    melted = frame.select(["bgg_id", *category_columns]).unpivot(
         index="bgg_id",
         on=category_columns,
         variable_name="category",
         value_name="value",
     )
-    categories_frame = (
-        melted_frame.filter(pl.col("value") > 0)
+    categories = (
+        melted.filter(pl.col("value") > 0)
         .with_columns(pl.col("category").str.replace("Cat:", ""))
         .group_by("bgg_id")
         .agg(pl.col("category").sort().str.join(", "))
         .rename({"category": "categories_base"})
     )
-    return categories_frame, category_columns
+    return categories
+
+
+def _load_tag_table(directory: Path, filename: str, alias: str) -> pl.DataFrame:
+    path = directory / filename
+    if not path.exists():
+        return pl.DataFrame({"bgg_id": pl.Series([], dtype=pl.Int64), alias: []})
+    table = pl.read_csv(path)
+    non_bgg_columns = [column for column in table.columns if column != "BGGId"]
+    if not non_bgg_columns:
+        return pl.DataFrame({"bgg_id": pl.Series([], dtype=pl.Int64), alias: []})
+    melted = table.unpivot(
+        index=["BGGId"],
+        on=non_bgg_columns,
+        variable_name="value",
+        value_name="flag",
+    )
+    gathered = (
+        melted.filter(pl.col("flag") == 1)
+        .group_by("BGGId")
+        .agg(pl.col("value").sort().str.join(", "))
+        .rename({"BGGId": "bgg_id", "value": alias})
+    )
+    return gathered
+
+
+def _prepare_stopwords(
+    stopwords: set[str] | dict[str, set[str]],
+    token_config: TokenizationConfig,
+) -> set[str]:
+    def _normalize(values: set[str]) -> set[str]:
+        return {token.lower() for token in values}
+
+    if isinstance(stopwords, dict):
+        english = _normalize(stopwords.get("english", set()))
+        domain = _normalize(stopwords.get("domain", set()))
+        combined = english | domain
+    else:
+        combined = _normalize(stopwords)
+        english = set()
+        domain = set()
+
+    active: set[str] = set()
+    if token_config.remove_english_stopwords:
+        active |= english or combined
+    if token_config.remove_domain_stopwords:
+        active |= domain or combined
+    if not active:
+        active = combined
+
+    allowed = {token.lower() for token in token_config.allowed_stopwords}
+    return {token for token in active if token not in allowed}
+
+
+def _normalize_free_text(
+    value: str | None, stopwords: set[str], deduplicate: bool
+) -> str | None:
+    if not value:
+        return None
+    tokens = _TOKEN_PATTERN.findall(value.lower())
+    filtered_tokens = [token for token in tokens if token not in stopwords]
+    if deduplicate:
+        seen: set[str] = set()
+        filtered_tokens = [
+            token for token in filtered_tokens if not (token in seen or seen.add(token))
+        ]
+    return " ".join(filtered_tokens) if filtered_tokens else None
+
+
+def _normalize_tag_text(value: str | None, prefix: str) -> str | None:
+    if not value:
+        return None
+    tokens = []
+    for token in value.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        normalized = token.lower().replace(" ", "_")
+        tokens.append(f"{prefix}::{normalized}")
+    return " ".join(sorted(set(tokens))) if tokens else None
+
+
+def _scale_numeric_series(series: pl.Series, strategy: str) -> pl.Expr:
+    column = series.cast(pl.Float64)
+    alias = normalized_numeric_column(series.name)
+
+    if strategy == "zscore":
+        mean = column.mean()
+        std = column.std()
+        if std is None or std == 0 or math.isnan(std):
+            return pl.lit(0.0).alias(alias)
+        return ((pl.col(series.name).cast(pl.Float64) - (mean or 0.0)) / std).alias(
+            alias
+        )
+
+    if strategy == "min-max":
+        min_value = column.min()
+        max_value = column.max()
+        if min_value is None or max_value is None or min_value == max_value:
+            return pl.lit(0.0).alias(alias)
+        return (
+            (pl.col(series.name).cast(pl.Float64) - min_value) / (max_value - min_value)
+        ).alias(alias)
+
+    if strategy == "robust":
+        q1 = column.quantile(0.25, interpolation="midpoint")
+        q3 = column.quantile(0.75, interpolation="midpoint")
+        if q1 is None or q3 is None or q1 == q3:
+            return pl.lit(0.0).alias(alias)
+        return ((pl.col(series.name).cast(pl.Float64) - q1) / (q3 - q1)).alias(alias)
+
+    raise ValueError(f"Unsupported normalization strategy: {strategy}")
+
+
+def _append_numeric_features(
+    frame: pl.DataFrame, config: PreprocessingConfig
+) -> pl.DataFrame:
+    numeric_config = config.features.numeric
+    expressions: list[pl.Expr] = []
+
+    normal_columns = numeric_config.normal.columns
+    heavy_tailed_columns = numeric_config.heavy_tail.columns
+
+    for column in normal_columns:
+        if column not in frame.columns:
+            logger.warning("Numeric column '%s' missing; filling with zeros", column)
+            frame = frame.with_columns(pl.lit(0.0).alias(column))
+        expressions.append(
+            _scale_numeric_series(
+                frame[column], numeric_config.normal.normalization_strategy
+            )
+        )
+
+    for column in heavy_tailed_columns:
+        if column not in frame.columns:
+            logger.warning("Numeric column '%s' missing; filling with zeros", column)
+            frame = frame.with_columns(pl.lit(0.0).alias(column))
+        expressions.append(
+            _scale_numeric_series(
+                frame[column], numeric_config.heavy_tail.normalization_strategy
+            )
+        )
+
+    if expressions:
+        frame = frame.with_columns(expressions)
+    return frame
+
+
+def _apply_cutoff(frame: pl.DataFrame, config: PreprocessingConfig) -> pl.DataFrame:
+    metric = config.cutoff_metric
+    if metric not in frame.columns:
+        raise ValueError(f"Cutoff metric '{metric}' not present in dataset")
+    quantile = config.cutoff_quantile
+    if quantile <= 0:
+        return frame
+    threshold_frame = frame.select(
+        pl.col(metric).quantile(quantile, interpolation="higher").alias("threshold")
+    )
+    threshold = threshold_frame["threshold"][0]
+    if threshold is None:
+        return frame
+    return frame.filter(pl.col(metric) >= threshold)
+
+
+def _clean_textual_columns(
+    frame: pl.DataFrame, stopwords: set[str], config: PreprocessingConfig
+) -> pl.DataFrame:
+    token_config = config.tokenization
+
+    def _clean_text(value: str | None) -> str | None:
+        return _normalize_free_text(
+            value, stopwords, token_config.vocabulary_deduplication
+        )
+
+    text_columns = config.features.text.columns
+    for column in text_columns:
+        if column not in frame.columns:
+            frame = frame.with_columns(pl.lit(None).alias(column))
+    frame = frame.with_columns(
+        [
+            pl.col(column).cast(pl.Utf8).map_elements(_clean_text).alias(column)
+            for column in text_columns
+        ]
+    )
+
+    categorical_columns = config.features.categorical.columns
+    for column in categorical_columns:
+        if column not in frame.columns:
+            frame = frame.with_columns(pl.lit(None).alias(column))
+    category_aliases = {
+        "mechanics": "mechanic",
+        "categories": "category",
+        "themes": "theme",
+    }
+    frame = frame.with_columns(
+        [
+            pl.col(column)
+            .cast(pl.Utf8)
+            .map_elements(
+                lambda value, prefix=category_aliases.get(
+                    column, column
+                ): _normalize_tag_text(value, prefix)
+            )
+            .alias(column)
+            for column in categorical_columns
+        ]
+    )
+    return frame
 
 
 def preprocess_data(
-    configuration: Config,
-    raw_data_directory_override: Path | None = None,
-    output_path_override: Path | None = None,
-    top_record_limit: int | None = None,
-) -> DataFrame:
-    """Clean raw CSV exports and emit a feature store parquet file."""
+    directory: Path,
+    stopwords: set[str],
+    config: PreprocessingConfig,
+) -> pl.DataFrame:
+    """
+    Transform the raw BoardGameGeek exports into a clean feature table ready for training.
+    """
 
-    effective_top_record_limit = (
-        top_record_limit
-        if top_record_limit is not None
-        else configuration.preprocessing.top_record_limit
-    )
+    directory = directory.resolve()
+    logger.info("Loading raw data from %s", directory)
+    games = _load_games(directory)
 
-    raw_data_directory = (
-        Path(raw_data_directory_override)
-        if raw_data_directory_override
-        else configuration.paths.raw_data
-    )
-    output_path = (
-        Path(output_path_override)
-        if output_path_override
-        else configuration.paths.processed_features
-    )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    categories = _extract_category_flags(games)
+    mechanics = _load_tag_table(directory, "mechanics.csv", "mechanics")
+    subcategories = _load_tag_table(directory, "subcategories.csv", "subcategories")
+    themes = _load_tag_table(directory, "themes.csv", "themes")
 
-    logger.info(
-        "Preprocessing boardgame data from %s -> %s (top_record_limit=%s)",
-        raw_data_directory,
-        output_path,
-        effective_top_record_limit,
-    )
+    frame = games.join(categories, on="bgg_id", how="left")
+    frame = frame.join(mechanics, on="bgg_id", how="left")
+    frame = frame.join(subcategories, on="bgg_id", how="left")
+    frame = frame.join(themes, on="bgg_id", how="left")
 
-    games_frame = pl.read_csv(raw_data_directory / "games.csv")
-    logger.info(
-        "Loaded %d raw titles; renaming columns to normalized schema",
-        games_frame.height,
-    )
-    games_frame = games_frame.rename(
-        {
-            "BGGId": "bgg_id",
-            "Name": "name",
-            "Description": "description",
-            "YearPublished": "year_published",
-            "AvgRating": "avg_rating",
-            "MinPlayers": "min_players",
-            "MaxPlayers": "max_players",
-            "ComMaxPlaytime": "community_playtime",
-            "MfgPlaytime": "mfg_playtime",
-            "NumUserRatings": "num_user_ratings",
-            "GameWeight": "complexity",
-        }
-    )
-
-    category_flags_frame, category_flag_columns = _extract_categories_from_flags(
-        games_frame
-    )
-    if category_flag_columns:
-        games_frame = games_frame.drop(category_flag_columns)
-
-    mechanics_tags_frame = _load_one_hot_tags(
-        raw_data_directory, "mechanics.csv", "mechanics"
-    )
-    subcategory_tags_frame = _load_one_hot_tags(
-        raw_data_directory, "subcategories.csv", "subcategories"
-    )
-    theme_tags_frame = _load_one_hot_tags(raw_data_directory, "themes.csv", "themes")
-
-    enriched_frame = games_frame
-    logger.info("Enriching games with category/mechanic/theme tag tables")
-    if category_flags_frame is not None:
-        enriched_frame = enriched_frame.join(
-            category_flags_frame, on="bgg_id", how="left"
+    frame = frame.with_columns(
+        pl.coalesce(pl.col("community_playtime"), pl.col("mfg_playtime")).alias(
+            "playing_time_minutes"
         )
-    if mechanics_tags_frame is not None:
-        enriched_frame = enriched_frame.join(
-            mechanics_tags_frame, on="bgg_id", how="left"
-        )
-    if subcategory_tags_frame is not None:
-        enriched_frame = enriched_frame.join(
-            subcategory_tags_frame, on="bgg_id", how="left"
-        )
-    if theme_tags_frame is not None:
-        enriched_frame = enriched_frame.join(theme_tags_frame, on="bgg_id", how="left")
-
-    logger.info(
-        "Deriving playing time and ensuring mechanics column exists for downstream joins"
-    )
-    enriched_frame = enriched_frame.with_columns(
-        [
-            pl.coalesce(pl.col("community_playtime"), pl.col("mfg_playtime")).alias(
-                "playing_time_minutes"
-            ),
-            pl.col("mechanics").alias("mechanics"),
-        ]
     )
 
-    category_source_columns = [
-        column_name
-        for column_name in ("categories_base", "subcategories")
-        if column_name in enriched_frame.columns
-    ]
-    if category_source_columns:
-        enriched_frame = enriched_frame.with_columns(
-            _combine_text(category_source_columns, target_alias="categories")
-        )
-    else:
-        enriched_frame = enriched_frame.with_columns(pl.lit(None).alias("categories"))
-    if "categories_base" in enriched_frame.columns:
-        enriched_frame = enriched_frame.drop("categories_base")
+    if "categories_base" in frame.columns:
+        if "categories" not in frame.columns:
+            frame = frame.with_columns(pl.lit(None).alias("categories"))
+        frame = frame.with_columns(
+            pl.when(pl.col("categories").is_null())
+            .then(pl.col("categories_base"))
+            .otherwise(pl.col("categories"))
+            .alias("categories")
+        ).drop("categories_base")
 
-    for optional_column in ("mechanics", "subcategories", "themes", "categories"):
-        if optional_column not in enriched_frame.columns:
-            enriched_frame = enriched_frame.with_columns(
-                pl.lit(None).alias(optional_column)
-            )
+    frame = _apply_cutoff(frame, config)
 
-    textual_feature_columns = ["description", "mechanics", "categories"]
-    logger.info("Building composite text blob from %s", textual_feature_columns)
-    enriched_frame = enriched_frame.with_columns(
-        _combine_text(textual_feature_columns, target_alias="text_blob", separator=" "),
-    )
+    final_stopwords = _prepare_stopwords(stopwords, config.tokenization)
+    frame = _clean_textual_columns(frame, final_stopwords, config)
+    frame = _append_numeric_features(frame, config)
 
-    tag_column_mapping = {
-        "mechanics": ("mechanic", "mechanics_tags"),
-        "categories": ("category", "categories_tags"),
-        "themes": ("theme", "themes_tags"),
-    }
-    logger.info(
-        "Projecting mechanics/categories/themes into token-tag columns for TF-IDF"
-    )
-    enriched_frame = enriched_frame.with_columns(
-        [
-            _tag_text_column(column, prefix, alias)
-            for column, (prefix, alias) in tag_column_mapping.items()
-        ]
-    )
-
-    required_columns = {
+    essential_columns = [
         "bgg_id",
         "name",
-        "description",
-        "mechanics",
-        "categories",
-        "mechanics_tags",
-        "categories_tags",
-        "themes_tags",
-        "text_blob",
         "avg_rating",
         "min_players",
         "max_players",
         "playing_time_minutes",
-        "year_published",
-        "num_user_ratings",
-        "complexity",
-    }
-    missing_columns = required_columns.difference(set(enriched_frame.columns))
-    if missing_columns:
-        raise ValueError(f"Missing expected columns: {sorted(missing_columns)}")
-
-    if effective_top_record_limit is not None:
-        logger.info(
-            "Restricting dataset to the top %d titles by number of user ratings",
-            effective_top_record_limit,
-        )
-        enriched_frame = enriched_frame.sort("num_user_ratings", descending=True).head(
-            effective_top_record_limit
-        )
-
-    if configuration.features.numeric_columns:
-        logger.info(
-            "Standardizing numeric features %s before model training",
-            configuration.features.numeric_columns,
-        )
-        enriched_frame = _append_normalized_numeric_features(
-            enriched_frame, configuration.features.numeric_columns
-        )
-
-    if logger.isEnabledFor(logging.DEBUG):
-        sample_rows = enriched_frame.head(5)
-        logger.debug(
-            "Processed sample (first %d rows) to sanity-check feature shapes:\n%s",
-            sample_rows.height,
-            sample_rows,
-        )
+        "description",
+    ]
+    missing = [column for column in essential_columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Missing essential columns after preprocessing: {missing}")
 
     logger.info(
-        "Finished preprocessing -> %s (rows=%d, columns=%d)",
-        output_path,
-        enriched_frame.height,
-        len(enriched_frame.columns),
+        "Finished preprocessing (rows=%d, columns=%d)", frame.height, frame.width
     )
-    return output_path
+    return frame
