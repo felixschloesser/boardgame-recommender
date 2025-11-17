@@ -165,3 +165,14 @@ python -m boardgame_recommender recommend \
 ```bash
 python -m boardgame_recommender clean
 ```
+
+## Development Workflow
+
+Install dev dependencies and git hooks to guarantee linting, typing, and tests run before every commit:
+
+```bash
+pip install -e .[dev] pre-commit
+pre-commit install
+```
+
+The configured hooks execute `ruff`, `mypy --explicit-package-bases src/boardgame_recommender`, and `pytest`. Use `SKIP=pytest git commit ...` if you need to bypass the full suite temporarily (e.g., when offline), but re-run locally before pushing.
