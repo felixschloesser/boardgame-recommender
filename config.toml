@@ -20,7 +20,7 @@ max_playing_time_minutes = 210  # Drop extremely long games
 [preprocessing.features]
 text = ["description"]
 categorical = ["mechanics", "categories", "themes"]
-numeric = ["avg_rating", "min_players", "max_players", "complexity", "age_recommendation",
+numeric = ["min_players", "max_players", "complexity", "age_recommendation",
 "num_user_ratings", "year_published", "playing_time_minutes"]
 
 
