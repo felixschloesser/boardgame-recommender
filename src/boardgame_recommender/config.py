@@ -85,21 +85,21 @@ class TextVectorizationConfig(BaseModel):
 
 
 # --------------------------------------
-# TASTE MODEL
+# EMBEDDING MODEL
 # --------------------------------------
 
 
-class TasteModelConfig(BaseModel):
-    normalize_taste_vectors: bool
-    taste_dimensions: int
+class EmbeddingModelConfig(BaseModel):
+    normalize_embedding_vectors: bool
+    embedding_dimensions: int
 
 
 # --------------------------------------
-# RECOMMENDATION
+# RECOMMENDATION: PREFERENCE CLUSTERS
 # --------------------------------------
 
 
-class RecommendationTasteModelConfig(BaseModel):
+class PreferenceClusterConfig(BaseModel):
     min_samples_per_centroid: int
     dynamic_centroids: bool
     centroid_scaling_factor: float
@@ -107,7 +107,7 @@ class RecommendationTasteModelConfig(BaseModel):
 
 class RecommendationConfig(BaseModel):
     similarity_aggregation: str
-    taste_model: RecommendationTasteModelConfig
+    preference_cluster: PreferenceClusterConfig
     random_seed: Optional[int] = None
 
 
@@ -129,7 +129,7 @@ class PreprocessingConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     text_vectorization: TextVectorizationConfig
-    taste_model: TasteModelConfig
+    embedding_model: EmbeddingModelConfig
 
 
 # --------------------------------------

@@ -60,19 +60,19 @@ equalize_description_length = true
 downweight_repeated_terms = true
 
 
-[training.taste_model]
-# If true, all taste vectors are scaled to the same length.
-# This means similarity depends only on *which* taste patterns a game has,
+[training.embedding_model]
+# If true, all embedding vectors are scaled to the same length.
+# This means similarity depends only on *which* structural patterns a game has,
 # not on how many or how strongly they are expressed.
 #
 # Leave this off unless you want the system to treat “feature-rich” games
 # (dense mechanics, many thematic elements) as not similar to each other.
-normalize_taste_vectors = false
+normalize_embedding_vectors = false
 
-# This controls how detailed the recommendation model’s internal understanding
-# of games becomes:
+# This controls how detailed the embedding’s representation of
+# game-to-game similarity becomes:
 #
-#   100–200  → broad taste structure
+#   100–200  → broad similarity structure
 #              (e.g., party games vs euros vs thematic adventures)
 #
 #   300–400  → balanced detail
@@ -85,23 +85,23 @@ normalize_taste_vectors = false
 #
 # Lower values generalize more strongly; higher values capture more nuance
 # but require more data and can emphasize subtle patterns.
-taste_dimensions = 250
+embedding_dimensions = 250
 
 
 
 [recommendation]
-# "max" = strong preferences (if a game matches any of your tastes strongly, it scores well)
-# "mean" = balanced tastes (game must match overall profile)
+# "max" = strong preferences (if a game matches any of your preferred structures strongly, it scores well)
+# "mean" = balanced structure (game must match overall profile)
 similarity_aggregation = "max"
 
-[recommendation.taste_model]
+[recommendation.preference_cluster]
 # Most players like different kinds of games (e.g., heavy strategy, quick fillers,
 # thematic co-ops). If we combine all liked games into one profile, these distinct
-# tastes get averaged together and lose their meaning. Splitting into multiple
-# "taste groups" keeps each preference pattern visible, so the system can
-# recommend games that match any of the user's real interests.
+# structures get averaged together and lose their meaning. Splitting liked games into
+# multiple preference clusters keeps each pattern visible, so the system can
+# recommend titles that match any of the user's real interests.
 min_samples_per_centroid = 3
-# Don’t split tastes unless user likes enough games to justify it.
+# Don’t split preference clusters unless user likes enough games to justify it.
 dynamic_centroids = true
 centroid_scaling_factor = 0.3
-# Example: User likes 10 games → 10 * 0.3 = ~3 taste groups.
+# Example: User likes 10 games → 10 * 0.3 = ~3 preference clusters.

@@ -42,8 +42,8 @@ def test_candidate_pool_empty_returns_no_results(sample_embedding, recommendatio
 
 def test_recommendations_are_deterministic_given_seed(sample_embedding, recommendation_config):
     cfg = recommendation_config.model_copy(deep=True)
-    cfg.taste_model.min_samples_per_centroid = 2
-    cfg.taste_model.dynamic_centroids = False
+    cfg.preference_cluster.min_samples_per_centroid = 2
+    cfg.preference_cluster.dynamic_centroids = False
 
     liked_games = ["Alpha", "Beta", "Gamma", "Delta"]
     kwargs = dict(
@@ -83,10 +83,10 @@ def test_result_formatting_converts_numeric_fields(sample_embedding, recommendat
 def test_similarity_aggregation_modes_affect_ranking(
     sample_embedding, recommendation_config, monkeypatch
 ):
-    def fake_tastes(self, liked_matrix):
+    def fake_vectors(self, liked_matrix):
         return np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
 
-    monkeypatch.setattr(RecommendationContext, "build_taste_vectors", fake_tastes)
+    monkeypatch.setattr(RecommendationContext, "build_preference_vectors", fake_vectors)
 
     cfg_max = recommendation_config.model_copy(deep=True)
     cfg_max.similarity_aggregation = "max"
@@ -128,28 +128,32 @@ def test_aggregate_scores_rejects_unknown_strategy():
 
 def test_cosine_similarity_handles_empty_inputs():
     empty = np.zeros((0, 2))
-    tastes = np.ones((1, 2))
-    similarity = _cosine_similarity(empty, tastes)
+    similarity_targets = np.ones((1, 2))
+    similarity = _cosine_similarity(empty, similarity_targets)
     assert similarity.shape == (0, 1)
 
 
 def test_context_rejects_missing_metadata_columns(recommendation_config):
     embedding = Embedding(
         run_identifier="broken",
-        vectors=pl.DataFrame({"bgg_id": [1], "name": ["Alpha"], "taste_0": [0.1]}),
-        metadata={"embedding_columns": ["taste_0", "taste_1"]},
+        vectors=pl.DataFrame(
+            {"bgg_id": [1], "name": ["Alpha"], "embedding_dimension_0": [0.1]}
+        ),
+        metadata={
+            "embedding_columns": ["embedding_dimension_0", "embedding_dimension_1"]
+        },
     )
     with pytest.raises(ValueError, match="missing from vectors"):
         RecommendationContext.from_embedding(embedding, recommendation_config)
 
 
-def test_context_rejects_vectors_without_taste_columns(recommendation_config):
+def test_context_rejects_vectors_without_embedding_columns(recommendation_config):
     embedding = Embedding(
         run_identifier="missing",
         vectors=pl.DataFrame({"bgg_id": [1], "name": ["Alpha"]}),
         metadata={},
     )
-    with pytest.raises(ValueError, match="do not contain any taste"):
+    with pytest.raises(ValueError, match="do not contain any embedding_dimension"):
         RecommendationContext.from_embedding(embedding, recommendation_config)
 
 
@@ -187,17 +191,17 @@ def test_run_kmeans_validations():
     assert np.allclose(mean_result, np.ones((1, 2)))
 
 
-def test_build_taste_vectors_with_dynamic_centroids(
+def test_build_preference_vectors_with_dynamic_centroids(
     monkeypatch, sample_embedding, recommendation_config
 ):
     cfg = recommendation_config.model_copy(deep=True)
-    cfg.taste_model.dynamic_centroids = True
-    cfg.taste_model.centroid_scaling_factor = 0.5
+    cfg.preference_cluster.dynamic_centroids = True
+    cfg.preference_cluster.centroid_scaling_factor = 0.5
 
     context = RecommendationContext(
         embedding=sample_embedding,
         config=cfg,
-        embedding_columns=["taste_0", "taste_1"],
+        embedding_columns=["embedding_dimension_0", "embedding_dimension_1"],
     )
 
     liked_matrix = np.arange(20, dtype=np.float64).reshape(10, 2)
@@ -210,9 +214,9 @@ def test_build_taste_vectors_with_dynamic_centroids(
 
     monkeypatch.setattr("boardgame_recommender.recommend._run_kmeans", fake_run_kmeans)
 
-    tastes = context.build_taste_vectors(liked_matrix)
+    vectors = context.build_preference_vectors(liked_matrix)
     assert calls["clusters"] >= 1
     assert calls["random_state"] == cfg.random_seed
-    assert tastes.shape[1] == 2
-    norms = np.linalg.norm(tastes, axis=1)
+    assert vectors.shape[1] == 2
+    norms = np.linalg.norm(vectors, axis=1)
     assert np.allclose(norms, 1.0)

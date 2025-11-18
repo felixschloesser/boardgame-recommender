@@ -42,32 +42,34 @@ def test_feature_schema_detection(sample_features, config):
 @pytest.mark.end_to_end
 def test_normalization_applied_when_enabled(sample_features, config):
     cfg = config.model_copy(deep=True)
-    cfg.training.taste_model.normalize_taste_vectors = True
+    cfg.training.embedding_model.normalize_embedding_vectors = True
 
     embedding = train(features=sample_features, config=cfg)
-    taste_columns = embedding.metadata["embedding_columns"]
-    taste_matrix = embedding.vectors.select(taste_columns).to_numpy()
-    norms = np.linalg.norm(taste_matrix, axis=1)
+    embedding_columns = embedding.metadata["embedding_columns"]
+    embedding_matrix = embedding.vectors.select(embedding_columns).to_numpy()
+    norms = np.linalg.norm(embedding_matrix, axis=1)
     assert np.all(
         np.isclose(norms, 1.0) | np.isclose(norms, 0.0)
-    ), "All taste rows should be normalized."
+    ), "All embedding rows should be normalized."
 
 
 @pytest.mark.end_to_end
-def test_taste_dimension_shape_and_metadata(sample_features, config):
+def test_embedding_dimension_shape_and_metadata(sample_features, config):
     cfg = config.model_copy(deep=True)
-    cfg.training.taste_model.taste_dimensions = 3
+    cfg.training.embedding_model.embedding_dimensions = 3
 
     embedding = train(features=sample_features, config=cfg)
-    taste_columns = [f"taste_{index}" for index in range(3)]
+    embedding_columns = [f"embedding_dimension_{index}" for index in range(3)]
 
-    assert embedding.metadata["embedding_columns"] == taste_columns
-    for column in taste_columns:
+    assert embedding.metadata["embedding_columns"] == embedding_columns
+    for column in embedding_columns:
         assert column in embedding.vectors.columns
 
 
-def test_train_rejects_non_positive_taste_dimensions(sample_features, config):
+def test_train_rejects_non_positive_embedding_dimensions(sample_features, config):
     cfg = config.model_copy(deep=True)
-    cfg.training.taste_model.taste_dimensions = 0
-    with pytest.raises(ValueError, match="taste_dimensions must be greater than zero"):
+    cfg.training.embedding_model.embedding_dimensions = 0
+    with pytest.raises(
+        ValueError, match="embedding_dimensions must be greater than zero"
+    ):
         train(features=sample_features, config=cfg)

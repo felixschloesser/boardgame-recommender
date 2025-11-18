@@ -7,14 +7,14 @@ import pytest
 
 from boardgame_recommender.config import (
     Config,
+    EmbeddingModelConfig,
     FeaturesConfig,
     FeatureWeightsConfig,
     PathsConfig,
+    PreferenceClusterConfig,
     PreprocessingConfig,
     PreprocessingFilters,
     RecommendationConfig,
-    RecommendationTasteModelConfig,
-    TasteModelConfig,
     TextVectorizationConfig,
     TokenizationConfig,
     TrainingConfig,
@@ -75,15 +75,15 @@ def config() -> Config:
             equalize_description_length=True,
             downweight_repeated_terms=False,
         ),
-        taste_model=TasteModelConfig(
-            normalize_taste_vectors=False,
-            taste_dimensions=2,
+        embedding_model=EmbeddingModelConfig(
+            normalize_embedding_vectors=False,
+            embedding_dimensions=2,
         ),
     )
 
     recommendation = RecommendationConfig(
         similarity_aggregation="max",
-        taste_model=RecommendationTasteModelConfig(
+        preference_cluster=PreferenceClusterConfig(
             min_samples_per_centroid=2,
             dynamic_centroids=False,
             centroid_scaling_factor=0.5,
@@ -145,12 +145,12 @@ def sample_embedding() -> Embedding:
             "min_players": [1, 2, 2, 3, 1],
             "max_players": [4, 4, 5, 5, 3],
             "playing_time_minutes": [60, 45, 30, 120, 20],
-            "taste_0": [1.0, 1.0, 0.5, 0.0, 0.2],
-            "taste_1": [0.0, 0.0, 0.5, 1.0, 0.8],
+            "embedding_dimension_0": [1.0, 1.0, 0.5, 0.0, 0.2],
+            "embedding_dimension_1": [0.0, 0.0, 0.5, 1.0, 0.8],
         }
     )
     metadata = {
-        "embedding_columns": ["taste_0", "taste_1"],
+        "embedding_columns": ["embedding_dimension_0", "embedding_dimension_1"],
     }
     return Embedding(run_identifier="test", vectors=vectors, metadata=metadata)
 
@@ -210,14 +210,14 @@ def config_factory():
                 equalize_description_length=True,
                 downweight_repeated_terms=False,
             ),
-            taste_model=TasteModelConfig(
-                normalize_taste_vectors=False,
-                taste_dimensions=2,
+            embedding_model=EmbeddingModelConfig(
+                normalize_embedding_vectors=False,
+                embedding_dimensions=2,
             ),
         )
         recommendation = RecommendationConfig(
             similarity_aggregation="max",
-            taste_model=RecommendationTasteModelConfig(
+            preference_cluster=PreferenceClusterConfig(
                 min_samples_per_centroid=2,
                 dynamic_centroids=False,
                 centroid_scaling_factor=0.5,

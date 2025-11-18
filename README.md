@@ -1,7 +1,7 @@
 # Boardgame Recommender
 
 An end-to-end, metadata-only recommender built on BoardGameGeek exports. The CLI
-preprocesses raw CSVs, learns a semantic “taste” embedding from curated
+preprocesses raw CSVs, learns a dense vector representation (embedding) that captures similarity patterns in curated
 boardgame features, and returns context-aware suggestions for players who know
 what they like but not what to try next.
 
@@ -15,12 +15,12 @@ what they like but not what to try next.
   bounds).
 - **Feature engineering:** description text, mechanics, categories/subcategories,
   and numeric stats (ratings, player counts, complexity, etc.) are tokenized
-  with synonym unification, boardgame stopwords, and bi-grams.
-- **Taste embedding:** weighted TF-IDF + numeric blocks feed a TruncatedSVD model
-  (SciPy + scikit-learn) that produces dense `taste_*` columns stored alongside
-  interpretable metadata in `vectors.parquet`.
-- **Recommendation engine:** liked games are clustered into dynamic “taste
-  groups” (KMeans) before cosine similarity scoring, so multiple distinct
+  with synonym unification, boardgame-domain stopwords, and bi-grams.
+- **Boardgame embedding:** weighted TF-IDF + numeric blocks feed a TruncatedSVD model
+  (SciPy + scikit-learn) that produces dense `embedding_dimension_<n>` columns stored alongside
+  interpretable boardgame metadata in `vectors.parquet`.
+- **Recommendation engine:** liked games are clustered into
+  groups (KMeans) before cosine similarity scoring, so multiple distinct
   preferences are respected. Candidates are filtered by player count and
   available time before ranking.
 - **Workspace tooling:** CLI commands orchestrate preprocessing, training,
@@ -37,9 +37,9 @@ what they like but not what to try next.
 │   └─ embeddings/            # One directory per trained run
 ├─ src/boardgame_recommender/
 │   ├─ pipelines/             # preprocessing.py + training.py
-│   ├─ recommend.py           # similarity search + taste clustering
-│   ├─ main.py                # CLI wiring (`python -m boardgame_recommender`)
-│   └─ config.py              # Strongly typed TOML loader (Pydantic v2)
+│   ├─ recommend.py           # liked-game clustering + similarity search
+│   ├─ main.py                # CLI wiring (`python -m boardgame_recommender...`)
+│   └─ config.py              # TOML-file loader
 └─ tests/                     # unit + end-to-end coverage
 ```
 
@@ -79,8 +79,8 @@ The preprocessing stage fails fast if any required files or columns are missing.
 | `[preprocessing.features]` | Select which columns become `text_*`, `cat_*`, or `num_*` features plus per-column weights. |
 | `[preprocessing.tokenization]` | Toggle synonym unification, boardgame stopwords, and the n-gram range used for descriptions. |
 | `[training.text_vectorization]` | TF-IDF knobs: min occurrences, max document frequency, and heuristics for long descriptions. |
-| `[training.taste_model]` | Embedding dimensionality + optional normalization of taste vectors. |
-| `[recommendation]` | Scoring aggregation mode (`max` vs `mean`) and how many taste centroids to form per user query. |
+| `[training.embedding_model]` | Embedding dimensionality + optional normalization of boardgame vectors. |
+| `[recommendation]` | Scoring aggregation mode (`max` vs `mean`) and how many preference clusters to form per user query. |
 
 Paths are resolved relative to the config file, so alternative environments can
 ship their own TOML file and pass `--config path/to/config.toml`.
@@ -97,7 +97,7 @@ ship their own TOML file and pass `--config path/to/config.toml`.
    - `data/processed/boardgames.parquet`
    - `data/processed/data_quality.json` (rows kept, filter counts, timestamp)
 
-2. **Train the taste embedding**
+2. **Train the embedding model**
 
    ```bash
    python -m boardgame_recommender train

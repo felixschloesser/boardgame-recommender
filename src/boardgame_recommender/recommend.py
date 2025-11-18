@@ -15,7 +15,7 @@ from boardgame_recommender.pipelines.training import Embedding
 from boardgame_recommender.utils.transforms import normalize_rows
 from boardgame_recommender.utils.validation import format_missing
 
-_TASTE_PREFIX = "taste_"
+_EMBEDDING_DIMENSION_PREFIX = "embedding_dimension_"
 Array = NDArray[np.float64]
 
 
@@ -47,7 +47,7 @@ def recommend_games(
         .astype(np.float64, copy=False),
     )
 
-    taste_vectors = context.build_taste_vectors(liked_matrix)
+    preference_vectors = context.build_preference_vectors(liked_matrix)
 
     candidate_frame = context.select_candidates(
         liked_games=liked_games,
@@ -63,7 +63,7 @@ def recommend_games(
         .to_numpy()
         .astype(np.float64, copy=False),
     )
-    similarity_matrix = _cosine_similarity(candidate_matrix, taste_vectors)
+    similarity_matrix = _cosine_similarity(candidate_matrix, preference_vectors)
     scores = _aggregate_scores(similarity_matrix, strategy=config.similarity_aggregation)
 
     ranked = (
@@ -93,7 +93,9 @@ class RecommendationContext:
 
         metadata_columns = embedding.metadata.get("embedding_columns") or []
         discovered_columns = [
-            column for column in vectors.columns if column.startswith(_TASTE_PREFIX)
+            column
+            for column in vectors.columns
+            if column.startswith(_EMBEDDING_DIMENSION_PREFIX)
         ]
 
         if metadata_columns:
@@ -106,7 +108,9 @@ class RecommendationContext:
             embedding_columns = list(metadata_columns)
         else:
             if not discovered_columns:
-                raise ValueError("Embedding vectors do not contain any taste_* columns.")
+                raise ValueError(
+                    "Embedding vectors do not contain any embedding_dimension_* columns."
+                )
             embedding_columns = discovered_columns
 
         return cls(
@@ -173,40 +177,40 @@ class RecommendationContext:
             & (~pl.col("name").is_in(liked_games))
         )
 
-    def build_taste_vectors(self, liked_matrix: Array) -> Array:
+    def build_preference_vectors(self, liked_matrix: Array) -> Array:
         if liked_matrix.size == 0:
             raise ValueError("Liked games could not be mapped to the embedding space.")
-        taste_config = self.config.taste_model
+        cluster_config = self.config.preference_cluster
 
         liked_count = liked_matrix.shape[0]
         centroid_count = _determine_centroid_count(
             liked_count=liked_count,
-            min_samples_per_centroid=taste_config.min_samples_per_centroid,
-            dynamic_centroids=taste_config.dynamic_centroids,
-            centroid_scaling_factor=taste_config.centroid_scaling_factor,
+            min_samples_per_centroid=cluster_config.min_samples_per_centroid,
+            dynamic_centroids=cluster_config.dynamic_centroids,
+            centroid_scaling_factor=cluster_config.centroid_scaling_factor,
         )
 
         if centroid_count == 1 or liked_count <= centroid_count:
-            taste_vectors = cast(Array, liked_matrix.mean(axis=0, keepdims=True))
+            preference_vectors = cast(Array, liked_matrix.mean(axis=0, keepdims=True))
         else:
             safe_centroids = max(1, min(centroid_count, max(1, liked_count // 2)))
-            taste_vectors = _run_kmeans(
+            preference_vectors = _run_kmeans(
                 liked_matrix,
                 n_clusters=safe_centroids,
                 random_state=self.config.random_seed,
             )
 
-        return normalize_rows(taste_vectors)
+        return normalize_rows(preference_vectors)
 
 
 def _cosine_similarity(
     candidates: Array,
-    tastes: Array,
+    targets: Array,
 ) -> Array:
-    if candidates.size == 0 or tastes.size == 0:
-        empty = np.zeros((candidates.shape[0], tastes.shape[0]), dtype=np.float64)
+    if candidates.size == 0 or targets.size == 0:
+        empty = np.zeros((candidates.shape[0], targets.shape[0]), dtype=np.float64)
         return cast(Array, empty)
-    return cast(Array, cosine_similarity(candidates, tastes))
+    return cast(Array, cosine_similarity(candidates, targets))
 
 
 def _aggregate_scores(similarity: Array, strategy: str) -> Array:

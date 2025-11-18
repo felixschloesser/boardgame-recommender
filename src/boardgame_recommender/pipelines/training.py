@@ -29,7 +29,7 @@ class Embedding:
 
     - `vectors` holds one row per game including:
         * base metadata columns (bgg_id, name, ratings, players, time)
-        * taste_* columns representing the low-dimensional embedding.
+        * embedding_dimension_* columns representing the low-dimensional embedding.
     - `metadata` contains training configuration and schema details.
     """
 
@@ -51,7 +51,7 @@ def train(
     show_progress: bool = False,
 ) -> Embedding:
     """
-    Train a low-dimensional "taste" embedding from preprocessed features.
+    Train a low-dimensional similarity embedding from preprocessed features.
 
     Expected input schema (configurable upstream):
     - text_* columns: free text facets (description, mechanics, categories, themes, ...)
@@ -63,8 +63,8 @@ def train(
         2. Numeric features as a dense block with its own weight.
         3. Feature matrix concatenation (scipy.sparse.hstack).
         4. TruncatedSVD for dimensionality reduction.
-        5. Optional L2 row-normalization of the resulting taste vectors.
-        6. Construction of a Polars DataFrame with base metadata + taste_* columns.
+        5. Optional L2 row-normalization of the resulting embedding vectors.
+        6. Construction of a Polars DataFrame with base metadata + embedding_dimension_* columns.
     """
     if features.is_empty():
         raise ValueError("Cannot train on an empty feature table.")
@@ -108,30 +108,31 @@ def train(
     feature_matrix = sparse.hstack(blocks, format="csr")
     progress.update(1)
 
-    taste_config = config.training.taste_model
-    if taste_config.taste_dimensions <= 0:
-        raise ValueError("taste_dimensions must be greater than zero.")
+    embedding_config = config.training.embedding_model
+    if embedding_config.embedding_dimensions <= 0:
+        raise ValueError("embedding_dimensions must be greater than zero.")
 
     if show_progress:
         logger.info(
-            "Computing low-dimensional taste embedding via TruncatedSVD "
+            "Computing low-dimensional similarity embedding via TruncatedSVD "
             "(%d dimensions) ...",
-            taste_config.taste_dimensions,
+            embedding_config.embedding_dimensions,
         )
     svd = TruncatedSVD(
-        n_components=taste_config.taste_dimensions,
+        n_components=embedding_config.embedding_dimensions,
         random_state=config.random_seed,
     )
     embedding_matrix = svd.fit_transform(feature_matrix).astype(np.float64, copy=False)
 
-    if taste_config.normalize_taste_vectors:
+    if embedding_config.normalize_embedding_vectors:
         embedding_matrix = normalize_rows(embedding_matrix)
 
     progress.update(1)
     progress.close()
 
     embedding_columns = [
-        f"taste_{index}" for index in range(taste_config.taste_dimensions)
+        f"embedding_dimension_{index}"
+        for index in range(embedding_config.embedding_dimensions)
     ]
     base_columns = _base_columns(features)
 
@@ -151,7 +152,7 @@ def train(
         "created_at": created_at,
         "row_count": features.height,
         "embedding_columns": embedding_columns,
-        "taste_dimensions": taste_config.taste_dimensions,
+        "embedding_dimensions": embedding_config.embedding_dimensions,
         "training_config": config.training.model_dump(mode="json"),
         "feature_schema": {
             "text": schema.text_columns,
@@ -206,7 +207,7 @@ def _build_text_blocks(
 
     Rationale:
     - Separate vectorizers per facet allows domain experts to adjust weights independently.
-    - We apply scalar weights *before* SVD so that taste dimensions remain interpretable.
+    - We apply scalar weights *before* SVD so that embedding dimensions remain interpretable.
     """
     blocks: list[sparse.csr_matrix] = []
 
