@@ -1,0 +1,619 @@
+openapi: 3.1.0
+
+info:
+  title: Boardgame Recommender API
+  version: "1.2.1"
+  description: |
+    API for a boardgame recommender used in controlled user studies.
+    This version replaces model-exposed controls with intent-based inputs and
+    fully aligns the BoardGame schema with the recommender feature schema.
+    Stability-focused refactor: stronger constraints, cleaner pagination and nullability.
+
+servers:
+  - url: /api/
+
+tags:
+  - name: auth
+  - name: catalogue
+  - name: games
+  - name: recommendations
+
+components:
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session_id
+
+  schemas:
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+          minLength: 1
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+        error_code:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+        - type
+        - title
+        - status
+      unevaluatedProperties: true
+
+    Participant:
+      type: object
+      properties:
+        participant_id:
+          type: string
+          minLength: 1
+        created_at:
+          type: string
+          format: date-time
+        study_group:
+          type: [string, "null"]
+      required:
+        - participant_id
+        - created_at
+      unevaluatedProperties: false
+
+    Paginated:
+      type: object
+      description: Generic pagination envelope.
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items: {}
+      required:
+        - total
+        - limit
+        - offset
+        - items
+      unevaluatedProperties: false
+
+    ###############################
+    # Updated BoardGame Schema
+    ###############################
+    BoardGame:
+      type: object
+      description: Structured boardgame entry aligned with ML feature schema.
+      properties:
+
+        id:
+          type: string
+          pattern: "^bgg:[0-9]+$"
+
+        name:
+          type: string
+          minLength: 1
+
+        # TEXT FEATURES
+        description:
+          type: [string, "null"]
+
+        # CATEGORICAL FEATURES
+        mechanics:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+          default: []
+
+        categories:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+          default: []
+
+        themes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+          default: []
+
+        # NUMERIC FEATURES
+        min_players:
+          type: integer
+          minimum: 1
+
+        max_players:
+          type: integer
+          minimum: 1
+
+        complexity:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 5
+
+        age_recommendation:
+          type: ["integer", "null"]
+          minimum: 0
+
+        num_user_ratings:
+          type: ["integer", "null"]
+          minimum: 0
+
+        year_published:
+          type: ["integer", "null"]
+          minimum: 1800
+          maximum: 2100
+
+        playing_time_minutes:
+          type: integer
+          minimum: 1
+
+        # Extra metadata
+        image_url:
+          type: ["string", "null"]
+          format: uri
+
+      required:
+        - id
+        - name
+        - min_players
+        - max_players
+        - playing_time_minutes
+
+      unevaluatedProperties: false
+
+      examples:
+        - value:
+            id: "bgg:13"
+            name: "Catan"
+            description: "Trade, build, settle."
+            mechanics: ["Trading", "Dice Rolling"]
+            categories: ["Strategy", "Economic"]
+            themes: ["Exploration", "Settlement"]
+            min_players: 3
+            max_players: 4
+            complexity: 0.46
+            age_recommendation: 10
+            num_user_ratings: 120000
+            year_published: 1995
+            playing_time_minutes: 90
+            image_url: "https://cdn.example.com/catan.jpg"
+        - value:
+            id: "bgg:1406"
+            name: "Monopoly"
+            description: "Classic economic family game."
+            mechanics: ["Roll and Move", "Player Elimination"]
+            categories: ["Family", "Economic"]
+            themes: ["Urban", "Property"]
+            min_players: 2
+            max_players: 8
+            complexity: 0.22
+            age_recommendation: 8
+            num_user_ratings: 1000000
+            year_published: 1935
+            playing_time_minutes: 120
+            image_url: "https://cdn.example.com/monopoly.jpg"
+
+    RecommendationResult:
+      type: object
+      properties:
+        boardgame:
+          $ref: "#/components/schemas/BoardGame"
+        score:
+          type: number
+          description: Model score; higher is better.
+        rank:
+          type: integer
+          minimum: 1
+      required:
+        - boardgame
+        - score
+        - rank
+      unevaluatedProperties: false
+
+    RecommendationIntentRequest:
+      type: object
+      unevaluatedProperties: false
+      properties:
+
+        liked_games:
+          type: array
+          items:
+            type: string
+            pattern: "^bgg:[0-9]+$"
+          uniqueItems: true
+          default: []
+
+        disliked_games:
+          type: array
+          items:
+            type: string
+            pattern: "^bgg:[0-9]+$"
+          uniqueItems: true
+          default: []
+
+        play_context:
+          type: ["object", "null"]
+          unevaluatedProperties: false
+          properties:
+            players:
+              type: ["integer", "null"]
+              minimum: 1
+            duration:
+              type: ["string", "null"]
+              enum: ["short", "medium", "long"]
+
+        preference_tags:
+          type: array
+          items:
+            type: string
+            enum:
+              - "strategy"
+              - "cooperative"
+              - "family-friendly"
+              - "low-luck"
+              - "thematic"
+              - "party"
+              - "economic"
+              - "abstract"
+          uniqueItems: true
+          default: []
+
+        avoid_tags:
+          type: array
+          items:
+            type: string
+            enum:
+              - "strategy"
+              - "cooperative"
+              - "family-friendly"
+              - "low-luck"
+              - "thematic"
+              - "party"
+              - "economic"
+              - "abstract"
+          uniqueItems: true
+          default: []
+
+        num_results:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+
+      required:
+        - num_results
+
+    RecommendationSession:
+      type: object
+      properties:
+        session_id:
+          type: string
+          minLength: 1
+        participant_id:
+          type: string
+          minLength: 1
+        created_at:
+          type: string
+          format: date-time
+        intent:
+          $ref: "#/components/schemas/RecommendationIntentRequest"
+        model_version:
+          type: string
+          minLength: 1
+        experiment_group:
+          type: ["string", "null"]
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecommendationResult"
+          minItems: 1
+      required:
+        - session_id
+        - participant_id
+        - created_at
+        - intent
+        - model_version
+        - recommendations
+      unevaluatedProperties: false
+
+paths:
+
+  /auth/session:
+    post:
+      tags: [auth]
+      summary: Initialize a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              unevaluatedProperties: false
+              properties:
+                study_token:
+                  type: string
+                  minLength: 1
+              required:
+                - study_token
+      responses:
+        "200":
+          description: Session created
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Participant"
+        "400":
+          description: Invalid study token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+    delete:
+      tags: [auth]
+      summary: Terminate current session
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Session terminated
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /recommendation:
+    get:
+      tags: [recommendations]
+      summary: List recommendation sessions
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: limit
+          description: Page size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: offset
+          description: Zero-based offset into result set
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of recommendation sessions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Paginated"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/RecommendationSession"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+    post:
+      tags: [recommendations]
+      summary: Create a recommendation session
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecommendationIntentRequest"
+      responses:
+        "201":
+          description: Recommendation session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecommendationSession"
+        "400":
+          description: Invalid intent data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Recommender temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /recommendation/{session_id}:
+    get:
+      tags: [recommendations]
+      summary: Get a recommendation session by ID
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Recommendation session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecommendationSession"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /games:
+    get:
+      tags: [catalogue, games]
+      summary: List boardgames
+      parameters:
+        - in: query
+          name: limit
+          description: Page size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: offset
+          description: Zero-based offset into result set
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - in: query
+          name: categories
+          description: Filter by categories
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              minLength: 1
+        - in: query
+          name: mechanics
+          description: Filter by mechanics
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              minLength: 1
+        - in: query
+          name: themes
+          description: Filter by themes
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              minLength: 1
+        - in: query
+          name: q
+          description: Full-text search query
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Paginated list of boardgames
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Paginated"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/BoardGame"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /games/{game_id}:
+    get:
+      tags: [catalogue, games]
+      summary: Get a boardgame by ID
+      parameters:
+        - in: path
+          name: game_id
+          required: true
+          schema:
+            type: string
+            pattern: "^bgg:[0-9]+$"
+      responses:
+        "200":
+          description: Boardgame
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardGame"
+        "404":
+          description: Boardgame not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
