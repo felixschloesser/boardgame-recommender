@@ -2,19 +2,15 @@ openapi: 3.1.0
 
 info:
   title: Boardgame Recommender API
-  version: "1.2.1"
+  version: "0.1.0"
   description: |
     API for a boardgame recommender used in controlled user studies.
-    This version replaces model-exposed controls with intent-based inputs and
-    fully aligns the BoardGame schema with the recommender feature schema.
-    Stability-focused refactor: stronger constraints, cleaner pagination and nullability.
 
 servers:
   - url: /api/
 
 tags:
   - name: auth
-  - name: catalogue
   - name: games
   - name: recommendations
 
@@ -30,35 +26,107 @@ components:
 
     ProblemDetails:
       type: object
+      description: RFC 9457-compatible problem details object with structured extensions.
       properties:
         type:
           type: string
           format: uri
+          default: "about:blank"
+          description: A URI identifying the general problem type.
+          example: "https://example.com/problems/user-not-found"
         title:
           type: string
           minLength: 1
+          description: Short human-readable summary for the problem.
+          example: "User not found"
         status:
           type: integer
           minimum: 100
           maximum: 599
+          description: HTTP status code associated with the error.
+          example: 404
         detail:
           type: string
+          description: Human-readable explanation specific to this occurrence.
+          example: "No user exists with the specified ID."
         instance:
           type: string
-          format: uri
-        error_code:
+          description: Identifier for this specific occurrence. May be URI or opaque.
+          example: "req-7f1d23c"
+        code:
           type: string
-        errors:
-          type: object
-          additionalProperties:
-            type: array
-            items:
-              type: string
+          description: Application-specific stable error code.
+          example: "USER_NOT_FOUND"
+        invalid_params:
+          type: array
+          description: Structured list of invalid parameters in request payload or query.
+          items:
+            type: object
+            required: [name, reason]
+            properties:
+              name:
+                type: string
+                description: Parameter name or JSON pointer to offending element.
+                example: "email"
+              reason:
+                type: string
+                description: Explanation of why the parameter is invalid.
+                example: "The value is not a valid email address."
+              code:
+                type: string
+                description: Optional machine-readable sub-error code for this parameter.
+                example: "FORMAT_INVALID"
       required:
-        - type
         - title
         - status
-      unevaluatedProperties: true
+      unevaluatedProperties: false
+
+      examples:
+        generic:
+          summary: Generic RFC 9457 'about:blank' error
+          value:
+            type: "about:blank"
+            title: "Internal Server Error"
+            status: 500
+            detail: "An unexpected server-side condition was encountered. Please try again later."
+            instance: "req-7f1d23c"
+
+        domain:
+          summary: Domain error with specific type + code
+          value:
+            type: "https://boardgame-rec.example/errors/game-not-found"
+            title: "Game not found"
+            status: 404
+            detail: "No boardgame exists with the specified ID."
+            instance: "req-81fe442"
+            error_code: "GAME_NOT_FOUND"
+
+        validation:
+          summary: Validation error illustrating structured field errors
+          value:
+            type: "https://boardgame-rec.example/errors/validation-error"
+            title: "Validation failed"
+            status: 400
+            detail: "One or more input parameters were invalid."
+            instance: "req-a48e29e"
+            error_code: "VALIDATION_ERROR"
+            errors:
+              play_context.players:
+                - "Value must be ≥ 1."
+              liked_games[0]:
+                - "Must match pattern '^[0-9]+$'."
+
+        auth:
+          summary: Authentication/authorization error
+          value:
+            type: "https://boardgame-rec.example/errors/unauthorized"
+            title: "Authentication required"
+            status: 401
+            detail: "A valid session cookie is required to access this resource."
+            instance: "req-ff93c011"
+            error_code: "AUTH_INVALID_SESSION"
+
+
 
     Participant:
       type: object
@@ -100,9 +168,6 @@ components:
         - items
       unevaluatedProperties: false
 
-    ###############################
-    # Updated BoardGame Schema
-    ###############################
     BoardGame:
       type: object
       description: Structured boardgame entry aligned with ML feature schema.
@@ -110,17 +175,17 @@ components:
 
         id:
           type: string
-          pattern: "^bgg:[0-9]+$"
+          pattern: "^[0-9]+$"
 
         name:
           type: string
           minLength: 1
 
-        # TEXT FEATURES
+        # TEXT
         description:
           type: [string, "null"]
 
-        # CATEGORICAL FEATURES
+        # CATEGORICAL
         mechanics:
           type: array
           items:
@@ -145,7 +210,7 @@ components:
           uniqueItems: true
           default: []
 
-        # NUMERIC FEATURES
+        # NUMERIC
         min_players:
           type: integer
           minimum: 1
@@ -169,8 +234,8 @@ components:
 
         year_published:
           type: ["integer", "null"]
-          minimum: 1800
-          maximum: 2100
+          minimum: -3500
+          maximum: 2021
 
         playing_time_minutes:
           type: integer
@@ -192,7 +257,7 @@ components:
 
       examples:
         - value:
-            id: "bgg:13"
+            id: "13"
             name: "Catan"
             description: "Trade, build, settle."
             mechanics: ["Trading", "Dice Rolling"]
@@ -206,8 +271,9 @@ components:
             year_published: 1995
             playing_time_minutes: 90
             image_url: "https://cdn.example.com/catan.jpg"
+            bgg_url: "https://example.com/13"
         - value:
-            id: "bgg:1406"
+            id: "1406"
             name: "Monopoly"
             description: "Classic economic family game."
             mechanics: ["Roll and Move", "Player Elimination"]
@@ -221,6 +287,7 @@ components:
             year_published: 1935
             playing_time_minutes: 120
             image_url: "https://cdn.example.com/monopoly.jpg"
+            bgg_url: "https://example.com/games/1406"
 
     RecommendationResult:
       type: object
@@ -239,7 +306,7 @@ components:
         - rank
       unevaluatedProperties: false
 
-    RecommendationIntentRequest:
+    RecommendationRequest:
       type: object
       unevaluatedProperties: false
       properties:
@@ -248,7 +315,7 @@ components:
           type: array
           items:
             type: string
-            pattern: "^bgg:[0-9]+$"
+            pattern: "^[0-9]+$"
           uniqueItems: true
           default: []
 
@@ -256,7 +323,7 @@ components:
           type: array
           items:
             type: string
-            pattern: "^bgg:[0-9]+$"
+            pattern: "^[0-9]+$"
           uniqueItems: true
           default: []
 
@@ -312,7 +379,7 @@ components:
       required:
         - num_results
 
-    RecommendationSession:
+    Recommendation:
       type: object
       properties:
         session_id:
@@ -325,7 +392,7 @@ components:
           type: string
           format: date-time
         intent:
-          $ref: "#/components/schemas/RecommendationIntentRequest"
+          $ref: "#/components/schemas/RecommendationRequest"
         model_version:
           type: string
           minLength: 1
@@ -438,7 +505,7 @@ paths:
                       items:
                         type: array
                         items:
-                          $ref: "#/components/schemas/RecommendationSession"
+                          $ref: "#/components/schemas/Recommendation"
         "401":
           description: Unauthorized
           content:
@@ -456,14 +523,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RecommendationIntentRequest"
+              $ref: "#/components/schemas/RecommendationRequest"
       responses:
         "201":
           description: Recommendation session created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RecommendationSession"
+                $ref: "#/components/schemas/Recommendation"
         "400":
           description: Invalid intent data
           content:
@@ -502,7 +569,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RecommendationSession"
+                $ref: "#/components/schemas/Recommendation"
         "401":
           description: Unauthorized
           content:
@@ -568,7 +635,7 @@ paths:
               minLength: 1
         - in: query
           name: q
-          description: Full-text search query
+          description: Text search query for title (or description?)
           schema:
             type: string
             minLength: 1
@@ -603,7 +670,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: "^bgg:[0-9]+$"
+            pattern: "^[0-9]+$"
       responses:
         "200":
           description: Boardgame
