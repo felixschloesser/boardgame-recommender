@@ -5,14 +5,19 @@ info:
   version: "0.1.0"
   description: |
     API for a boardgame recommender used in controlled user studies.
+    Provides game metadata, preference-based recommendation generation,
+    and complete audit trails for experimental conditions.
 
 servers:
   - url: /api/
 
 tags:
   - name: auth
+    description: Authentication and session lifecycle.
   - name: games
+    description: Access to the canonical boardgame dataset used by the recommender.
   - name: recommendations
+    description: Creation and retrieval of recommendation sessions.
 
 components:
 
@@ -26,61 +31,44 @@ components:
 
     ProblemDetails:
       type: object
-      description: RFC 9457-compatible problem details object with structured extensions.
+      description: >
+        Error payload following RFC 9457. Provides structured diagnostic information
+        for validation failures, domain errors (e.g., unknown game), and authentication issues.
       properties:
         type:
           type: string
           format: uri
           default: "about:blank"
-          description: A URI identifying the general problem type.
-          example: "https://example.com/problems/user-not-found"
         title:
           type: string
           minLength: 1
-          description: Short human-readable summary for the problem.
-          example: "User not found"
         status:
           type: integer
           minimum: 100
           maximum: 599
-          description: HTTP status code associated with the error.
-          example: 404
         detail:
           type: string
-          description: Human-readable explanation specific to this occurrence.
-          example: "No user exists with the specified ID."
         instance:
           type: string
-          description: Identifier for this specific occurrence. May be URI or opaque.
-          example: "req-7f1d23c"
+          format: uri
         code:
           type: string
-          description: Application-specific stable error code.
-          example: "USER_NOT_FOUND"
         invalid_params:
           type: array
-          description: Structured list of invalid parameters in request payload or query.
           items:
             type: object
             required: [name, reason]
             properties:
               name:
                 type: string
-                description: Parameter name or JSON pointer to offending element.
-                example: "email"
               reason:
                 type: string
-                description: Explanation of why the parameter is invalid.
-                example: "The value is not a valid email address."
               code:
                 type: string
-                description: Optional machine-readable sub-error code for this parameter.
-                example: "FORMAT_INVALID"
       required:
         - title
         - status
       unevaluatedProperties: false
-
       examples:
         generic:
           summary: Generic RFC 9457 'about:blank' error
@@ -89,47 +77,43 @@ components:
             title: "Internal Server Error"
             status: 500
             detail: "An unexpected server-side condition was encountered. Please try again later."
-            instance: "req-7f1d23c"
-
         domain:
           summary: Domain error with specific type + code
           value:
-            type: "https://boardgame-rec.example/errors/game-not-found"
+            type: "https://example.com/errors/game-not-found"
             title: "Game not found"
             status: 404
             detail: "No boardgame exists with the specified ID."
-            instance: "req-81fe442"
-            error_code: "GAME_NOT_FOUND"
-
+            code: "GAME_NOT_FOUND"
         validation:
           summary: Validation error illustrating structured field errors
           value:
-            type: "https://boardgame-rec.example/errors/validation-error"
+            type: "https://example.com/errors/validation-error"
             title: "Validation failed"
             status: 400
             detail: "One or more input parameters were invalid."
-            instance: "req-a48e29e"
-            error_code: "VALIDATION_ERROR"
-            errors:
-              play_context.players:
-                - "Value must be ≥ 1."
-              liked_games[0]:
-                - "Must match pattern '^[0-9]+$'."
-
+            code: "VALIDATION_ERROR"
+            invalid_params:
+              - name: "play_context.players"
+                reason: "Value must be ≥ 1."
+                code: "RANGE_MIN"
+              - name: "liked_games[0]"
+                reason: "Must match pattern '^[0-9]+$'."
+                code: "FORMAT_INVALID"
         auth:
           summary: Authentication/authorization error
           value:
-            type: "https://boardgame-rec.example/errors/unauthorized"
+            type: "https://example.com/errors/unauthorized"
             title: "Authentication required"
             status: 401
             detail: "A valid session cookie is required to access this resource."
-            instance: "req-ff93c011"
-            error_code: "AUTH_INVALID_SESSION"
-
-
+            code: "AUTH_INVALID_SESSION"
 
     Participant:
       type: object
+      description: >
+        A study participant represented by a random identifier. Tracks session creation
+        and optional assignment to experiment groups without storing personal data.
       properties:
         participant_id:
           type: string
@@ -146,7 +130,7 @@ components:
 
     Paginated:
       type: object
-      description: Generic pagination envelope.
+      description: Generic pagination envelope used for listing boardgames or sessions.
       properties:
         total:
           type: integer
@@ -158,34 +142,26 @@ components:
         offset:
           type: integer
           minimum: 0
-        items:
-          type: array
-          items: {}
       required:
         - total
         - limit
         - offset
-        - items
       unevaluatedProperties: false
 
     BoardGame:
       type: object
-      description: Structured boardgame entry aligned with ML feature schema.
+      description: >
+        Canonical boardgame entry aligned with the recommender’s feature model.
+        Includes player counts, mechanics, themes, complexity, and URLs for assets and metadata.
       properties:
-
         id:
           type: string
           pattern: "^[0-9]+$"
-
-        name:
+        title:
           type: string
           minLength: 1
-
-        # TEXT
         description:
-          type: [string, "null"]
-
-        # CATEGORICAL
+          type: string
         mechanics:
           type: array
           items:
@@ -193,15 +169,13 @@ components:
             minLength: 1
           uniqueItems: true
           default: []
-
-        categories:
+        genre:
           type: array
           items:
             type: string
             minLength: 1
           uniqueItems: true
           default: []
-
         themes:
           type: array
           items:
@@ -209,88 +183,62 @@ components:
             minLength: 1
           uniqueItems: true
           default: []
-
-        # NUMERIC
         min_players:
           type: integer
           minimum: 1
-
         max_players:
           type: integer
           minimum: 1
-
         complexity:
-          type: ["number", "null"]
+          type: number
           minimum: 0
           maximum: 5
-
         age_recommendation:
-          type: ["integer", "null"]
+          type: integer
           minimum: 0
-
         num_user_ratings:
-          type: ["integer", "null"]
+          type: integer
           minimum: 0
-
+        avg_user_rating:
+          type: number
+          minimum: 0
+          maximum: 10
         year_published:
-          type: ["integer", "null"]
+          type: integer
           minimum: -3500
           maximum: 2021
-
         playing_time_minutes:
           type: integer
           minimum: 1
-
-        # Extra metadata
         image_url:
-          type: ["string", "null"]
+          type: string
           format: uri
-
+        bgg_url:
+          type: string
+          format: uri
       required:
         - id
-        - name
+        - title
+        - description
+        - mechanics
+        - genre
+        - themes
         - min_players
         - max_players
+        - complexity
+        - age_recommendation
+        - num_user_ratings
+        - year_published
         - playing_time_minutes
-
+        - image_url
+        - bgg_url
       unevaluatedProperties: false
-
-      examples:
-        - value:
-            id: "13"
-            name: "Catan"
-            description: "Trade, build, settle."
-            mechanics: ["Trading", "Dice Rolling"]
-            categories: ["Strategy", "Economic"]
-            themes: ["Exploration", "Settlement"]
-            min_players: 3
-            max_players: 4
-            complexity: 0.46
-            age_recommendation: 10
-            num_user_ratings: 120000
-            year_published: 1995
-            playing_time_minutes: 90
-            image_url: "https://cdn.example.com/catan.jpg"
-            bgg_url: "https://example.com/13"
-        - value:
-            id: "1406"
-            name: "Monopoly"
-            description: "Classic economic family game."
-            mechanics: ["Roll and Move", "Player Elimination"]
-            categories: ["Family", "Economic"]
-            themes: ["Urban", "Property"]
-            min_players: 2
-            max_players: 8
-            complexity: 0.22
-            age_recommendation: 8
-            num_user_ratings: 1000000
-            year_published: 1935
-            playing_time_minutes: 120
-            image_url: "https://cdn.example.com/monopoly.jpg"
-            bgg_url: "https://example.com/games/1406"
 
     RecommendationResult:
       type: object
+      description: >
+        A single ranked recommendation returned by the model, including score
+        and position within the result list.
       properties:
         boardgame:
           $ref: "#/components/schemas/BoardGame"
@@ -308,9 +256,11 @@ components:
 
     RecommendationRequest:
       type: object
+      description: >
+        User preference profile used to generate a recommendation session.
+        Includes liked/disliked games, optional play context, and tag-level preferences.
       unevaluatedProperties: false
       properties:
-
         liked_games:
           type: array
           items:
@@ -318,7 +268,6 @@ components:
             pattern: "^[0-9]+$"
           uniqueItems: true
           default: []
-
         disliked_games:
           type: array
           items:
@@ -326,7 +275,6 @@ components:
             pattern: "^[0-9]+$"
           uniqueItems: true
           default: []
-
         play_context:
           type: ["object", "null"]
           unevaluatedProperties: false
@@ -337,7 +285,6 @@ components:
             duration:
               type: ["string", "null"]
               enum: ["short", "medium", "long"]
-
         preference_tags:
           type: array
           items:
@@ -353,7 +300,6 @@ components:
               - "abstract"
           uniqueItems: true
           default: []
-
         avoid_tags:
           type: array
           items:
@@ -369,18 +315,19 @@ components:
               - "abstract"
           uniqueItems: true
           default: []
-
         num_results:
           type: integer
           minimum: 1
           maximum: 100
           default: 10
-
       required:
         - num_results
 
     Recommendation:
       type: object
+      description: >
+        Full recommendation session including participant metadata, model version,
+        request intent, and ranked results. Enables reproducibility and experimental tracking.
       properties:
         session_id:
           type: string
@@ -418,6 +365,9 @@ paths:
     post:
       tags: [auth]
       summary: Initialize a session
+      description: >
+        Creates a new participant session using a study token. Issues a session
+        cookie used for authenticated access to recommendation endpoints.
       requestBody:
         required: true
         content:
@@ -433,7 +383,7 @@ paths:
                 - study_token
       responses:
         "200":
-          description: Session created
+          description: Session created and session cookie issued.
           headers:
             Set-Cookie:
               schema:
@@ -443,13 +393,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Participant"
         "400":
-          description: Invalid study token
+          description: Invalid study token.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "401":
-          description: Unauthorized
+          description: Unauthorized.
           content:
             application/json:
               schema:
@@ -458,13 +408,15 @@ paths:
     delete:
       tags: [auth]
       summary: Terminate current session
+      description: >
+        Ends the active participant session and clears the authentication cookie.
       security:
         - sessionCookie: []
       responses:
         "204":
-          description: Session terminated
+          description: Session terminated.
         "401":
-          description: Unauthorized
+          description: Unauthorized.
           content:
             application/json:
               schema:
@@ -474,12 +426,15 @@ paths:
     get:
       tags: [recommendations]
       summary: List recommendation sessions
+      description: >
+        Returns a paginated list of all recommendation sessions created
+        by the authenticated participant. Used for audit and analysis.
       security:
         - sessionCookie: []
       parameters:
         - in: query
           name: limit
-          description: Page size
+          description: Page size.
           schema:
             type: integer
             minimum: 1
@@ -487,14 +442,14 @@ paths:
             default: 20
         - in: query
           name: offset
-          description: Zero-based offset into result set
+          description: Zero-based offset into result set.
           schema:
             type: integer
             minimum: 0
             default: 0
       responses:
         "200":
-          description: Paginated list of recommendation sessions
+          description: Paginated list of recommendation sessions.
           content:
             application/json:
               schema:
@@ -507,7 +462,7 @@ paths:
                         items:
                           $ref: "#/components/schemas/Recommendation"
         "401":
-          description: Unauthorized
+          description: Unauthorized.
           content:
             application/json:
               schema:
@@ -516,6 +471,9 @@ paths:
     post:
       tags: [recommendations]
       summary: Create a recommendation session
+      description: >
+        Generates a recommendation list based on the user's preference profile.
+        Records the full session for reproducibility and analysis.
       security:
         - sessionCookie: []
       requestBody:
@@ -526,25 +484,25 @@ paths:
               $ref: "#/components/schemas/RecommendationRequest"
       responses:
         "201":
-          description: Recommendation session created
+          description: Recommendation session created and stored.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Recommendation"
         "400":
-          description: Invalid intent data
+          description: Invalid intent data.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "401":
-          description: Unauthorized
+          description: Unauthorized.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "503":
-          description: Recommender temporarily unavailable
+          description: Recommender temporarily unavailable.
           content:
             application/json:
               schema:
@@ -554,6 +512,9 @@ paths:
     get:
       tags: [recommendations]
       summary: Get a recommendation session by ID
+      description: >
+        Retrieves the full recommendation session including request, model version,
+        experiment condition, and detailed ranked results.
       security:
         - sessionCookie: []
       parameters:
@@ -565,19 +526,19 @@ paths:
             minLength: 1
       responses:
         "200":
-          description: Recommendation session
+          description: Recommendation session retrieved.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Recommendation"
         "401":
-          description: Unauthorized
+          description: Unauthorized.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
-          description: Session not found
+          description: Session not found.
           content:
             application/json:
               schema:
@@ -585,12 +546,15 @@ paths:
 
   /games:
     get:
-      tags: [catalogue, games]
+      tags: [games]
       summary: List boardgames
+      description: >
+        Returns boardgames from the canonical dataset with optional filters
+        for genre, mechanics, themes, or free-text search.
       parameters:
         - in: query
           name: limit
-          description: Page size
+          description: Page size.
           schema:
             type: integer
             minimum: 1
@@ -598,14 +562,14 @@ paths:
             default: 20
         - in: query
           name: offset
-          description: Zero-based offset into result set
+          description: Zero-based offset.
           schema:
             type: integer
             minimum: 0
             default: 0
         - in: query
-          name: categories
-          description: Filter by categories
+          name: genre
+          description: Filter by genre.
           style: form
           explode: true
           schema:
@@ -615,7 +579,7 @@ paths:
               minLength: 1
         - in: query
           name: mechanics
-          description: Filter by mechanics
+          description: Filter by mechanics.
           style: form
           explode: true
           schema:
@@ -625,7 +589,7 @@ paths:
               minLength: 1
         - in: query
           name: themes
-          description: Filter by themes
+          description: Filter by themes.
           style: form
           explode: true
           schema:
@@ -635,13 +599,13 @@ paths:
               minLength: 1
         - in: query
           name: q
-          description: Text search query for title (or description?)
+          description: Text search filter for title or description.
           schema:
             type: string
             minLength: 1
       responses:
         "200":
-          description: Paginated list of boardgames
+          description: Paginated list of boardgames.
           content:
             application/json:
               schema:
@@ -654,32 +618,35 @@ paths:
                         items:
                           $ref: "#/components/schemas/BoardGame"
         "400":
-          description: Invalid query parameters
+          description: Invalid query parameters.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  /games/{game_id}:
+  /games/{id}:
     get:
-      tags: [catalogue, games]
+      tags: [games]
       summary: Get a boardgame by ID
+      description: >
+        Provides the authoritative metadata for a boardgame. Used by study interfaces
+        to retrieve details for explanations and reference-based reasoning.
       parameters:
         - in: path
-          name: game_id
+          name: id
           required: true
           schema:
             type: string
             pattern: "^[0-9]+$"
       responses:
         "200":
-          description: Boardgame
+          description: Boardgame retrieved.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BoardGame"
         "404":
-          description: Boardgame not found
+          description: Boardgame not found.
           content:
             application/json:
               schema:
