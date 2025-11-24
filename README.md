@@ -48,11 +48,11 @@ what they like but not what to try next.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .          # library + CLI
-pip install -e .[dev]     # tooling: pytest, mypy, ruff
+pip install -e '.'          # library + CLI
+pip install -e '.[dev]'     # tooling: pytest, mypy, ruff
 ```
 
-This project targets Python 3.13+. Dependencies are listed in `pyproject.toml`.
+This project targets Python 3.11-14. Dependencies are listed in `pyproject.toml`.
 
 ## Data requirements
 
