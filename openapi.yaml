@@ -174,33 +174,32 @@ components:
           type: object
           description: Structured explanation of why this game was recommended.
           unevaluatedProperties: false
-          oneOf:
-            - required: [references]
-            - required: [features]
+          required: [type]
           properties:
+            type:
+              type: string
+              enum: ["references", "features"]
 
             references:
               type: array
-              escription: |
-                Reference-based reasoning using familiar games selected by the backend.
+              description: Reference-based reasoning using familiar games selected by the backend.
               minItems: 1
               maxItems: 3
               items:
                 type: object
                 unevaluatedProperties: false
-                required: [game_id, title]
+                required: [bgg_id, title]
                 properties:
-                  game_id:
-                    type: string
-                    pattern: "^[0-9]+$"
+                  bgg_id:
+                    type: integer
+                    minimum: 1
                   title:
                     type: string
                     minLength: 1
 
             features:
               type: array
-              description: |
-                Feature-based reasoning exposing key domain factors used by the model.
+              description: Feature-based reasoning exposing key domain factors used by the model.
               minItems: 1
               maxItems: 3
               items:
@@ -210,10 +209,6 @@ components:
                 properties:
                   label:
                     type: string
-                    description: >
-                      Domain-specific label such as "short playtime",
-                      "drafting mechanic" or "family-friendly theme".
-
                   category:
                     type: string
                     enum:
@@ -223,6 +218,18 @@ components:
                       - playtime
                       - complexity
                       - age
+
+              allOf:
+                - if:
+                    properties:
+                      type: { const: "references" }
+                  then:
+                    required: ["type", "references"]
+                - if:
+                    properties:
+                      type: { const: "features" }
+                  then:
+                    required: ["type", "features"]
       required: [boardgame, explanation]
       unevaluatedProperties: false
 
@@ -236,13 +243,13 @@ components:
           type: array
           uniqueItems: true
           default: []
-          items: { type: string, pattern: "^[0-9]+$" }
+          items: { type: integer, minimum: 1 }
 
         disliked_games:
           type: array
           uniqueItems: true
           default: []
-          items: { type: string, pattern: "^[0-9]+$" }
+          items: { type: integer, minimum: 1 }
 
         play_context:
           type: object
@@ -425,30 +432,35 @@ paths:
         - in: query
           name: limit
           schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+
         - in: query
           name: offset
           schema: { type: integer, minimum: 0, default: 0 }
+
         - in: query
           name: genre
           style: form
           explode: true
           schema:
             type: array
-            items: { type: string }
+            items: { type: string, minLength: 1 }
+
         - in: query
           name: mechanics
           style: form
           explode: true
           schema:
             type: array
-            items: { type: string }
+            items: { type: string, minLength: 1 }
+
         - in: query
           name: themes
           style: form
           explode: true
           schema:
             type: array
-            items: { type: string }
+            items: { type: string, minLength: 1 }
+
         - in: query
           name: q
           schema: { type: string }
@@ -467,15 +479,15 @@ paths:
                         items:
                           $ref: "#/components/schemas/BoardGame"
 
-  /games/{id}:
+  /games/{bgg_id}:
     get:
       tags: [games]
       summary: Retrieve metadata for a boardgame.
       parameters:
         - in: path
-          name: id
+          name: bgg_id
           required: true
-          schema: { type: string, pattern: "^[0-9]+$" }
+          schema: { type: integer, minimum: 1 }
       responses:
         "200":
           description: Boardgame retrieved.
