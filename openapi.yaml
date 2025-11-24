@@ -34,7 +34,7 @@ components:
       description: >
         Error payload following RFC 9457. Provides structured diagnostic information
         for validation failures, domain errors (e.g., unknown game), and authentication issues.
-     properties:
+      properties:
         type: { type: string, format: uri }
         title: { type: string, minLength: 1 }
         status: { type: integer, minimum: 100, maximum: 599 }
@@ -53,44 +53,44 @@ components:
       required: [title, status]
       unevaluatedProperties: false
       examples:
-        generic:
-          summary: Generic RFC 9457 'about:blank' error
-          value:
-            type: "about:blank"
-            title: "Internal Server Error"
-            status: 500
-            detail: "The server encountered an internal error while processing the request. Please try again later."
-        domain:
-          summary: Domain error with specific type + code
-          value:
-            type: "https://example.com/errors/game-not-found"
-            title: "Game not found"
-            status: 404
-            detail: "No boardgame exists with the specified ID."
-            code: "GAME_NOT_FOUND"
-        validation:
-          summary: Validation error illustrating structured field errors
-          value:
-            type: "https://example.com/errors/validation-error"
-            title: "Validation failed"
-            status: 400
-            detail: "One or more input parameters were invalid."
-            code: "VALIDATION_ERROR"
-            invalid_params:
-              - name: "play_context.players"
-                reason: "Value must be ≥ 1."
-                code: "RANGE_MIN"
-              - name: "liked_games[0]"
-                reason: "Must match pattern '^[0-9]+$'."
-                code: "FORMAT_INVALID"
-        auth:
-          summary: Authentication/authorization error
-          value:
-            type: "https://example.com/errors/unauthorized"
-            title: "Authentication required"
-            status: 401
-            detail: "A valid session cookie is required to access this resource."
-            code: "AUTH_INVALID_SESSION"
+        - generic:
+            summary: Generic RFC 9457 'about:blank' error
+            value:
+              type: "about:blank"
+              title: "Internal Server Error"
+              status: 500
+              detail: "The server encountered an internal error while processing the request. Please try again later."
+        - domain:
+            summary: Domain error with specific type + code
+            value:
+              type: "https://example.com/errors/game-not-found"
+              title: "Game not found"
+              status: 404
+              detail: "No boardgame exists with the specified ID."
+              code: "GAME_NOT_FOUND"
+        - validation:
+            summary: Validation error illustrating structured field errors
+            value:
+              type: "https://example.com/errors/validation-error"
+              title: "Validation failed"
+              status: 400
+              detail: "One or more input parameters were invalid."
+              code: "VALIDATION_ERROR"
+              invalid_params:
+                - name: "play_context.players"
+                  reason: "Value must be ≥ 1."
+                  code: "RANGE_MIN"
+                - name: "liked_games[0]"
+                  reason: "Must match pattern '^[0-9]+$'."
+                  code: "FORMAT_INVALID"
+        - auth:
+            summary: Authentication/authorization error
+            value:
+              type: "https://example.com/errors/unauthorized"
+              title: "Authentication required"
+              status: 401
+              detail: "A valid session cookie is required to access this resource."
+              code: "AUTH_INVALID_SESSION"
 
     Participant:
       type: object
@@ -162,7 +162,7 @@ components:
         - bgg_url
       unevaluatedProperties: false
 
-    RecommendationResult:
+    Recommendation:
       type: object
       description: |
         A recommendation entry paired with a structured explanation.
@@ -180,57 +180,49 @@ components:
           properties:
 
             references:
-              type: object
-              description: |
+              type: array
+              escription: |
                 Reference-based reasoning using familiar games selected by the backend.
-              unevaluatedProperties: false
-              properties:
-                references:
-                  type: array
-                  minItems: 1
-                  maxItems: 3
-                  items:
-                    type: object
-                    unevaluatedProperties: false
-                    required: [game_id, title]
-                    properties:
-                      game_id:
-                        type: string
-                        pattern: "^[0-9]+$"
-                      title:
-                        type: string
-                        minLength: 1
+              minItems: 1
+              maxItems: 3
+              items:
+                type: object
+                unevaluatedProperties: false
+                required: [game_id, title]
+                properties:
+                  game_id:
+                    type: string
+                    pattern: "^[0-9]+$"
+                  title:
+                    type: string
+                    minLength: 1
 
             features:
-              type: object
+              type: array
               description: |
                 Feature-based reasoning exposing key domain factors used by the model.
-              unevaluatedProperties: false
-              properties:
-                factors:
-                  type: array
-                  minItems: 1
-                  maxItems: 3
-                  items:
-                    type: object
-                    unevaluatedProperties: false
-                    required: [descriptor, category]
-                    properties:
-                      descriptor:
-                        type: string
-                        description: >
-                          Domain-specific descriptor such as "short playtime",
-                          "drafting mechanic" or "family-friendly theme".
+              minItems: 1
+              maxItems: 3
+              items:
+                type: object
+                unevaluatedProperties: false
+                required: [label, category]
+                properties:
+                  label:
+                    type: string
+                    description: >
+                      Domain-specific label such as "short playtime",
+                      "drafting mechanic" or "family-friendly theme".
 
-                     category:
-                        type: string
-                        enum:
-                          - mechanic
-                          - theme
-                          - genre
-                          - playtime
-                          - complexity
-                          - age
+                  category:
+                    type: string
+                    enum:
+                      - mechanic
+                      - theme
+                      - genre
+                      - playtime
+                      - complexity
+                      - age
       required: [boardgame, explanation]
       unevaluatedProperties: false
 
@@ -300,7 +292,7 @@ components:
           default: 10
       required: [num_results]
 
-    Recommendation:
+    RecommendationResponse:
       type: object
       description: |
         A complete recommendation session including input, model version,
@@ -317,7 +309,7 @@ components:
           type: array
           minItems: 1
           items:
-            $ref: "#/components/schemas/RecommendationResult"
+            $ref: "#/components/schemas/Recommendation"
       required:
         - session_id
         - participant_id
@@ -390,7 +382,7 @@ paths:
           description: Recommendation session created.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Recommendation" }
+              schema: { $ref: "#/components/schemas/RecommendationResponse" }
         "400":
           description: Invalid request.
           content:
@@ -418,7 +410,7 @@ paths:
           description: Recommendation session retrieved.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Recommendation" }
+              schema: { $ref: "#/components/schemas/RecommendationResponse" }
         "404":
           description: Session not found.
           content:
