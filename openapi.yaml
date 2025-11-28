@@ -50,7 +50,6 @@ components:
               name: { type: string }
               reason: { type: string }
               code: { type: string }
-      required: [title, status]
       unevaluatedProperties: false
       examples:
         - generic:
@@ -108,6 +107,9 @@ components:
         total: { type: integer, minimum: 0 }
         limit: { type: integer, minimum: 1, maximum: 100 }
         offset: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items: { type: object }
       required: [total, limit, offset]
       unevaluatedProperties: false
 
@@ -395,6 +397,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "503":
           description: Recommender unavailable.
           content:
@@ -418,6 +425,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RecommendationResponse" }
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "404":
           description: Session not found.
           content:
@@ -478,6 +490,12 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/BoardGame"
+        "400":
+          description: Invalid pagination parameters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /games/{bgg_id}:
     get:
@@ -497,6 +515,12 @@ paths:
                 $ref: "#/components/schemas/BoardGame"
         "404":
           description: Game not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "400":
+          description: Invalid request.
           content:
             application/json:
               schema:

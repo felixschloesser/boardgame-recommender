@@ -1,32 +1,17 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv.workspace]
+members = ["cli", "backend"]
 
-[project]
-name = "boardgame-recommender"
-version = "0.1.0"
-description = "Proof of concept of an embedding-based boardgame recommender."
-readme = "README.md"
-requires-python = ">=3.11, <3.15"
-authors = [
-    {name = "Felix Schlösser", email = "felixfranzjohannes.schloesser@student.kuleuven.be"}
+[tool.pytest.ini_options]
+markers = ["end_to_end: end-to-end tests"]
+filterwarnings = [
+    "ignore:Setting per-request cookies=<...> is being deprecated:DeprecationWarning:starlette",
 ]
 
-dependencies = [
-    "polars",
-    "scikit-learn",
-    "numpy",
-    "scipy",
-    "tqdm",
-    "pydantic",
-]
-
-
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+    "pytest",
     "ruff",
     "mypy",
-    "pytest",
 ]
 
 [tool.ruff]
@@ -39,28 +24,25 @@ select = ["E", "F", "I"]
 [tool.mypy]
 python_version = "3.13"
 warn_return_any = true
-warn_unused_configs = true
+strict = true
 strict_optional = true
 ignore_missing_imports = false
-namespace_packages = true
-mypy_path = "src"
+namespace_packages = false
 
 [[tool.mypy.overrides]]
 module = [
-    "tomllib",
     "tqdm.*",
-    "joblib",
     "scipy.*",
     "sklearn.*",
 ]
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
-addopts = "-q"
-pythonpath = ["src"]
-markers = [
-    "end_to_end: marks end-to-end pipeline tests"
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "cli.tests.*",
+    "backend.tests.*",
 ]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/boardgame_recommender"]
+disallow_untyped_defs = false
+check_untyped_defs = false
+ignore_errors = true

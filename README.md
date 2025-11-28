@@ -1,156 +1,158 @@
 # Boardgame Recommender
 
-An end-to-end, metadata-only recommender built on BoardGameGeek exports. The CLI
-preprocesses raw CSVs, learns a dense vector representation (embedding) that captures similarity patterns in curated
-boardgame features, and returns context-aware suggestions for players who know
-what they like but not what to try next.
+Boardgame Recommender is an end-to-end system designed to help board game enthusiasts discover new games based on their preferences. By leveraging metadata from BoardGameGeek, the system preprocesses raw data, trains a machine learning model to capture similarity patterns, and provides context-aware recommendations. The project includes a CLI for data preprocessing and model training, a backend web app for serving recommendations, and a frontend for user interaction.
 
-## What’s implemented
+---
 
-- **Dataset curation:** Polars pipelines load `games.csv`, `mechanics.csv`,
-  `subcategories.csv`, and `themes.csv`, normalize schemas, and merge auxiliary
-  tags.
-- **Domain-specific filtering:** configurable guardrails discard stale, obscure,
-  or extremely long titles (rating cutoff, popularity quantile, player/time
-  bounds).
-- **Feature engineering:** description text, mechanics, categories/subcategories,
-  and numeric stats (ratings, player counts, complexity, etc.) are tokenized
-  with synonym unification, boardgame-domain stopwords, and bi-grams.
-- **Boardgame embedding:** weighted TF-IDF + numeric blocks feed a TruncatedSVD model
-  (SciPy + scikit-learn) that produces dense `embedding_dimension_<n>` columns stored alongside
-  interpretable boardgame metadata in `vectors.parquet`.
-- **Recommendation engine:** liked games are clustered into
-  groups (KMeans) before cosine similarity scoring, so multiple distinct
-  preferences are respected. Candidates are filtered by player count and
-  available time before ranking.
-- **Workspace tooling:** CLI commands orchestrate preprocessing, training,
-  inference, and cleanup. Rich progress logging uses `tqdm` and Python’s logging
-  module.
+## Features
 
-## Repository layout
+### General
+- **End-to-End Workflow**: From raw data ingestion to recommendation delivery.
+- **Modular Design**: Separate components for CLI, backend, and frontend.
+- **Extensible Configuration**: Easily customize paths, filters, and model parameters.
+
+### CLI
+- **Data Preprocessing**: Normalize and curate BoardGameGeek exports.
+- **Feature Engineering**: Tokenize text, unify synonyms, and extract numeric features.
+- **Model Training**: Generate dense vector embeddings using TF-IDF and TruncatedSVD.
+- **Rich Logging**: Progress tracking and detailed reports.
+
+### Backend
+- **FastAPI-Based**: A lightweight and efficient backend for serving recommendations.
+- **SQLite Integration**: Imports preprocessed data and trained models for querying.
+- **RESTful API**: Exposes endpoints for recommendations and metadata.
+
+### Frontend
+- **Single Page Application (SPA)**: A React-based interface for user interaction.
+- **Dynamic Recommendations**: Query the backend for personalized suggestions.
+- **Responsive Design**: Optimized for both desktop and mobile devices.
+
+---
+
+## Repository Layout
 
 ```
-├─ config.toml                # Default configuration (paths + hyper-parameters)
-├─ data/
-│   ├─ raw/                   # Place BGG CSV exports here
-│   ├─ processed/             # Generated features + quality reports
-│   └─ embeddings/            # One directory per trained run
-├─ src/boardgame_recommender/
-│   ├─ pipelines/             # preprocessing.py + training.py
-│   ├─ recommend.py           # liked-game clustering + similarity search
-│   ├─ main.py                # CLI wiring (`python -m boardgame_recommender...`)
-│   └─ config.py              # TOML-file loader
-└─ tests/                     # unit + end-to-end coverage
+├── cli/                      # CLI for preprocessing and training
+│   ├── README.md             # CLI-specific documentation
+│   ├── src/                  # Source code for CLI
+│   └── tests/                # Unit tests for CLI
+├── backend/                  # Backend web application
+│   ├── src/                  # FastAPI application code
+│   └── tests/                # Unit and integration tests for backend
+├── frontend/                 # Frontend web application
+│   ├── src/                  # React application code
+│   └── public/               # Static assets
+├── data/                     # Data directory
+│   ├── raw/                  # Raw BoardGameGeek exports
+│   ├── processed/            # Preprocessed features and reports
+│   └── embeddings/           # Trained model embeddings
+├── pyproject.toml            # Project dependencies and configuration
+└── README.md                 # General project documentation
 ```
 
-## Getting started
+---
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.'          # library + CLI
-pip install -e '.[dev]'     # tooling: pytest, mypy, ruff
-```
+## Getting Started
 
-This project targets Python 3.11-14. Dependencies are listed in `pyproject.toml`.
+### Prerequisites
+- Python 3.11–3.14
+- Node.js (for frontend development)
+- SQLite (for backend database)
 
-## Data requirements
-
-1. Download the BoardGameGeek dump (e.g. from
-   [Kaggle](https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek/data)).
-2. Copy at least the following CSVs into `data/raw/`:
-   - `games.csv`
-   - `mechanics.csv`
-   - `subcategories.csv`
-   - `themes.csv`
-3. Customize vocabulary helpers if desired:
-   - `data/stopwords.txt` — domain stopwords removed from free-text columns.
-   - `data/synonyms.toml` — canonical phrases (e.g. “worker-placement”) mapped
-     to user-visible variants.
-
-The preprocessing stage fails fast if any required files or columns are missing.
-
-## Configuration overview (`config.toml`)
-
-| Section | Purpose |
-| --- | --- |
-| `[paths]` | Absolute/relative roots for raw data, processed features, embeddings, and auxiliary word lists. |
-| `[preprocessing.filters]` | Guardrails that narrow the catalog (publication year, rating quantile, player count, max play time). |
-| `[preprocessing.features]` | Select which columns become `text_*`, `cat_*`, or `num_*` features plus per-column weights. |
-| `[preprocessing.tokenization]` | Toggle synonym unification, boardgame stopwords, and the n-gram range used for descriptions. |
-| `[training.text_vectorization]` | TF-IDF knobs: min occurrences, max document frequency, and heuristics for long descriptions. |
-| `[training.embedding_model]` | Embedding dimensionality + optional normalization of boardgame vectors. |
-| `[recommendation]` | Scoring aggregation mode (`max` vs `mean`) and how many preference clusters to form per user query. |
-
-Paths are resolved relative to the config file, so alternative environments can
-ship their own TOML file and pass `--config path/to/config.toml`.
-
-## CLI workflow
-
-1. **Preprocess raw CSVs**
-
+### Setup
+1. Clone the repository:
    ```bash
-   python -m boardgame_recommender preprocess
+   git clone https://github.com/your-username/boardgame-recommender.git
+   cd boardgame-recommender
    ```
 
-   Outputs:
-   - `data/processed/boardgames.parquet`
-   - `data/processed/data_quality.json` (rows kept, filter counts, timestamp)
-
-2. **Train the embedding model**
-
+2. Set up the Python environment:
    ```bash
-   python -m boardgame_recommender train
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .\.venv\Scripts\activate
+   pip install -e '.[dev]'
    ```
 
-   Creates `data/embeddings/<run_id>/` containing `vectors.parquet` + `metadata.json`.
-
-3. **Generate recommendations**
-
+3. Set up the frontend:
    ```bash
-   python -m boardgame_recommender recommend \
-       --liked "Risk" "Catan" "Carcassonne" \
-       --players 2 \
-       --time 40 \
-       --amount 8
+   cd frontend
+   npm install
+   npm run build
    ```
 
-   - `--run` lets you pick a specific embedding directory; when omitted, the
-     latest completed run is used.
-   - `--players` and `--time` define contextual filters applied before scoring.
-
-4. **Clean generated artifacts** (optional)
-
+4. Run the backend:
    ```bash
-   python -m boardgame_recommender clean --force
+   uvicorn backend.src.main:app --reload
    ```
 
-   Removes `data/processed/` and `data/embeddings/` so you can re-ingest from scratch.
+5. Access the application:
+   - Open your browser and navigate to `http://127.0.0.1:8000`.
 
-All commands accept `-v/--verbose` (repeat for DEBUG logging) and `-c/--config`
-to point at a custom TOML file.
+---
 
-## Development & testing
+## Workflow Overview
 
-- Run the entire suite: `pytest`
-- Fast unit tests only: `pytest -m "not end_to_end"`
-- Pipeline sanity check: `pytest -m end_to_end`
-- Static analysis:
-  - `ruff check src tests`
-  - `mypy --explicit-package-bases src/boardgame_recommender`
+### CLI
+- Preprocess raw data:
+  ```bash
+  boardgames preprocess
+  ```
+- Train the model:
+  ```bash
+  boardgames train embedding
+  ```
+- Generate recommendations:
+  ```bash
+  boardgames recommend --liked "Catan" --players 2 --time 40
+  ```
 
-Consider installing `pre-commit` hooks so linting, typing, and tests run before
-each commit:
+### Backend
+- Serves the SPA and API endpoints.
+- Imports preprocessed data and trained models from `/data`.
 
+### Frontend
+- Provides a user-friendly interface for querying recommendations.
+- Built with React and served by the backend.
+
+---
+
+## Development
+
+### Testing
+- Run all tests:
+  ```bash
+  pytest
+  ```
+- Lint and type-check:
+  ```bash
+  ruff check .
+  mypy .
+  ```
+
+### Pre-commit Hooks
+Install pre-commit hooks to ensure code quality:
 ```bash
 pip install pre-commit
 pre-commit install
 ```
 
-## Future directions
+---
 
-The current focus is a robust metadata-only system. Potential future work:
+## Future Directions
 
-- ingesting BoardGameGeek rating matrices for collaborative filtering
-- hybrid rerankers that combine latent signals with interpretable features
-- richer explainability tooling (e.g. SHAP summaries of feature impact)
+- **Collaborative Filtering**: Incorporate user rating matrices.
+- **Hybrid Models**: Combine metadata-based and collaborative filtering approaches.
+- **Explainability**: Add tools to explain recommendations.
+- **Production Deployment**: Optimize for cloud-based deployment.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## Support
+
+For questions or issues, please open an issue on GitHub or contact [your email].

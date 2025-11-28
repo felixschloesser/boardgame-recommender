@@ -6,9 +6,15 @@ repos:
         entry: python -m ruff check
         language: system
         types: [python]
-      - id: mypy
-        name: Mypy
-        entry: python -m mypy --explicit-package-bases src/boardgame_recommender
+      - id: mypy_cli
+        name: Mypy CLI
+        entry: python -m mypy cli/src/boardgames_cli
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: mypy_api
+        name: Mypy API
+        entry: python -m mypy backend/src/boardgames_api
         language: system
         types: [python]
         pass_filenames: false

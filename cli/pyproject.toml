@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "boardgames-cli"
+version = "0.1.0"
+description = "CLI for the boardgame recommender"
+requires-python = ">=3.11,<3.15"
+
+dependencies = [
+    "polars",
+    "scikit-learn",
+    "numpy",
+    "scipy",
+    "tqdm",
+    "pydantic",
+]
+
+[project.scripts]
+boardgames = "boardgames_cli.app:main"
+
+[tool.uv.sources]
+boardgames-cli = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/boardgames_cli"]
