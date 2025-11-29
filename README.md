@@ -1,20 +1,15 @@
 # Boardgame Recommender
 
-Boardgame Recommender is an end-to-end system designed to help board game enthusiasts discover new games based on their preferences. By leveraging metadata from BoardGameGeek, the system preprocesses raw data, trains a machine learning model to capture similarity patterns, and provides context-aware recommendations. The project includes a CLI for data preprocessing and model training, a backend web app for serving recommendations, and a frontend for user interaction.
+Boardgame Recommender is a system designed to help board game enthusiasts discover new games based on their preferences. By leveraging metadata from BoardGameGeek, the system preprocesses raw data, trains a model to capture similarity patterns, and provides context-aware recommendations. The project includes a CLI for data preprocessing and model training, a backend web app for serving recommendations, and a frontend for user interaction.
 
 ---
 
 ## Features
 
-### General
-- **End-to-End Workflow**: From raw data ingestion to recommendation delivery.
-- **Modular Design**: Separate components for CLI, backend, and frontend.
-- **Extensible Configuration**: Easily customize paths, filters, and model parameters.
-
 ### CLI
 - **Data Preprocessing**: Normalize and curate BoardGameGeek exports.
 - **Feature Engineering**: Tokenize text, unify synonyms, and extract numeric features.
-- **Model Training**: Generate dense vector embeddings using TF-IDF and TruncatedSVD.
+- **Model Training**: Generate vector embeddings using TF-IDF and TruncatedSVD.
 - **Rich Logging**: Progress tracking and detailed reports.
 
 ### Backend
@@ -23,30 +18,43 @@ Boardgame Recommender is an end-to-end system designed to help board game enthus
 - **RESTful API**: Exposes endpoints for recommendations and metadata.
 
 ### Frontend
-- **Single Page Application (SPA)**: A React-based interface for user interaction.
-- **Dynamic Recommendations**: Query the backend for personalized suggestions.
-- **Responsive Design**: Optimized for both desktop and mobile devices.
+- **Single Page Application (SPA)**: A Vue-based user interface.
+- **Dynamic Recommendations**: Queries the backend for personalized suggestions.
+- **Responsive Design**: Optimized mobile devices.
 
 ---
 
 ## Repository Layout
 
 ```
-├── cli/                      # CLI for preprocessing and training
+├── cli/
+│   ├── pyproject.toml        # CLI-Project dependencies and configuration
+│   ├── config.toml           # Preprocessing and training configuration
 │   ├── README.md             # CLI-specific documentation
-│   ├── src/                  # Source code for CLI
-│   └── tests/                # Unit tests for CLI
-├── backend/                  # Backend web application
-│   ├── src/                  # FastAPI application code
-│   └── tests/                # Unit and integration tests for backend
-├── frontend/                 # Frontend web application
-│   ├── src/                  # React application code
-│   └── public/               # Static assets
-├── data/                     # Data directory
+│   ├── src/                  # Source code for boardgames-cli
+│   └── tests/                # Unit and integration tests
+│
+├── backend/
+│   ├── pyproject.toml        # API-Project dependencies and configuration
+│   ├── src/                  # Source code for boardgames-api
+│   ├── static/               # Served assets, the frontend build output goes here
+│   └── tests/                # Unit and integration tests
+│
+├── frontend/
+│   └── src/                  # Vue application code
+│
+├── data/
 │   ├── raw/                  # Raw BoardGameGeek exports
 │   ├── processed/            # Preprocessed features and reports
-│   └── embeddings/           # Trained model embeddings
-├── pyproject.toml            # Project dependencies and configuration
+│   ├── embeddings/           # Trained model embeddings
+│   ├── stopwords.txt         # Common filler words from the boardgame domain
+│   └── synonyms.toml         # Synonyms and spelling variants for normalization
+│
+├── .gitignore                # Files and directories to be ignored by git
+├── .pre-commit-config.yaml   # Automated code quality checks
+├── openapi.yaml              # API specification for the backend
+├── pyproject.toml            # Workspace definitons (two seperate projects)
+├── uv.lock                   # Locked dependencies for reproducible installs
 └── README.md                 # General project documentation
 ```
 
@@ -54,23 +62,24 @@ Boardgame Recommender is an end-to-end system designed to help board game enthus
 
 ## Getting Started
 
+This repo standardizes on `uv` for Python runtime and dependency management. The workspace-aware resolver keeps the CLI and backend in sync using the checked-in `uv.lock`, and `uv sync` makes installs both reproducible and fast. Install instructions: https://docs.astral.sh/uv/getting-started/installation/
+
 ### Prerequisites
-- Python 3.11–3.14
+- uv (for Python environment and dependency management)
 - Node.js (for frontend development)
 - SQLite (for backend database)
 
 ### Setup
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/boardgame-recommender.git
+   git clone https://github.com/felixschloesser/boardgame-recommender.git
    cd boardgame-recommender
    ```
 
-2. Set up the Python environment:
+2. Set up the Python environment with uv:
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .\.venv\Scripts\activate
-   pip install -e '.[dev]'
+   uv sync --group dev               # installs and locks all workspace deps into .venv
+   source .venv/bin/activate         # On Windows: .\.venv\Scripts\activate
    ```
 
 3. Set up the frontend:
@@ -82,7 +91,7 @@ Boardgame Recommender is an end-to-end system designed to help board game enthus
 
 4. Run the backend:
    ```bash
-   uvicorn backend.src.main:app --reload
+   boardgames-api
    ```
 
 5. Access the application:
@@ -112,27 +121,27 @@ Boardgame Recommender is an end-to-end system designed to help board game enthus
 
 ### Frontend
 - Provides a user-friendly interface for querying recommendations.
-- Built with React and served by the backend.
+- Manages wishlists and liked games.
 
 ---
 
 ## Development
 
 ### Testing
-- Run all tests:
+- Run all python tests:
   ```bash
-  pytest
+  uv run pytest
   ```
 - Lint and type-check:
   ```bash
-  ruff check .
-  mypy .
+  uv run ruff check .
+  uv run mypy .
   ```
 
 ### Pre-commit Hooks
 Install pre-commit hooks to ensure code quality:
 ```bash
-pip install pre-commit
+uv tool install pre-commit
 pre-commit install
 ```
 
@@ -143,16 +152,4 @@ pre-commit install
 - **Collaborative Filtering**: Incorporate user rating matrices.
 - **Hybrid Models**: Combine metadata-based and collaborative filtering approaches.
 - **Explainability**: Add tools to explain recommendations.
-- **Production Deployment**: Optimize for cloud-based deployment.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
----
-
-## Support
-
-For questions or issues, please open an issue on GitHub or contact [your email].
+- **Production Deployment**: Optimize for container-based deployment.
