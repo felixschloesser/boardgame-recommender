@@ -135,7 +135,7 @@ This repo standardizes on `uv` for Python runtime and dependency management. The
 - Lint and type-check:
   ```bash
   uv run ruff check .
-  uv run mypy .
+  uv run ty backend/src cli/src
   ```
 
 ### Pre-commit Hooks

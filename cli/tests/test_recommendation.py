@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
+from boardgames_cli.config import RecommendationConfig
 from boardgames_cli.pipelines.training import Embedding
 from boardgames_cli.recommend import (
     RecommendationContext,
@@ -51,17 +52,19 @@ def test_recommendations_are_deterministic_given_seed(
     cfg.preference_cluster.dynamic_centroids = False
 
     liked_games = ["Alpha", "Beta", "Gamma", "Delta"]
-    kwargs = dict(
-        embedding=sample_embedding,
-        liked_games=liked_games,
-        player_count=3,
-        available_time_minutes=200,
-        amount=2,
-        config=cfg,
-    )
 
-    first = recommend_games(**kwargs)
-    second = recommend_games(**kwargs)
+    def run() -> list[dict[str, object]]:
+        return recommend_games(
+            embedding=sample_embedding,
+            liked_games=liked_games,
+            player_count=3,
+            available_time_minutes=200,
+            amount=2,
+            config=cfg,
+        )
+
+    first = run()
+    second = run()
     assert first == second
 
 
@@ -100,16 +103,18 @@ def test_similarity_aggregation_modes_affect_ranking(
     cfg_mean = recommendation_config.model_copy(deep=True)
     cfg_mean.similarity_aggregation = "mean"
 
-    kwargs = dict(
-        embedding=sample_embedding,
-        liked_games=["Alpha"],
-        player_count=2,
-        available_time_minutes=200,
-        amount=2,
-    )
+    def run(cfg: RecommendationConfig) -> list[dict[str, object]]:
+        return recommend_games(
+            embedding=sample_embedding,
+            liked_games=["Alpha"],
+            player_count=2,
+            available_time_minutes=200,
+            amount=2,
+            config=cfg,
+        )
 
-    max_results = recommend_games(config=cfg_max, **kwargs)
-    mean_results = recommend_games(config=cfg_mean, **kwargs)
+    max_results = run(cfg_max)
+    mean_results = run(cfg_mean)
 
     assert max_results[0]["name"] == "Beta"
     assert mean_results[0]["name"] == "Gamma"

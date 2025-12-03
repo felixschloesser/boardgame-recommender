@@ -1,6 +1,6 @@
 # Boardgame Recommender CLI
 
-The CLI component of the Boardgame Recommender is responsible for preprocessing raw data, training the recommendation model, and generating embeddings. It is designed to handle the data pipeline and model preparation, which are later used by the web application for serving recommendations.
+The CLI component of the Boardgame Recommender preprocesses raw data, trains the similarity embedding, and generates recommendations.
 
 ## Features
 
@@ -18,11 +18,11 @@ The CLI component of the Boardgame Recommender is responsible for preprocessing 
 │   ├─ raw/                   # Place BGG CSV exports here
 │   ├─ processed/             # Generated features + quality reports
 │   └─ embeddings/            # One directory per trained run
-├─ src/boardgame_recommender/
+├─ src/boardgames_cli/
 │   ├─ pipelines/             # preprocessing.py + training.py
 │   ├─ recommend.py           # liked-game clustering + similarity search
-│   ├─ main.py                # CLI wiring (`python -m boardgame_recommender...`)
-│   └─ config.py              # TOML-file loader
+│   ├─ cli.py                 # CLI wiring (`boardgames ...`)
+│   └─ app.py                 # entrypoint for `python -m boardgames_cli`
 └─ tests/                     # unit + end-to-end coverage
 ```
 
@@ -30,11 +30,8 @@ The CLI component of the Boardgame Recommender is responsible for preprocessing 
 
 1. **Set up the environment**:
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .\.venv\Scripts\activate
-   pip install -e '.'          # Library + CLI
-   pip install -e '.[dev]'     # Development tools (pytest, mypy, ruff)
-   ```
+   uv sync                     # installs dependencies into a managed venv
+```
 
 2. **Prepare the data**:
    - Download the BoardGameGeek dump (e.g., from [Kaggle](https://www.kaggle.com/datasets/threnjen/board-games-database-from-boardgamegeek/data)).
@@ -47,20 +44,21 @@ The CLI component of the Boardgame Recommender is responsible for preprocessing 
 3. **Run CLI commands**:
    - Preprocess raw CSVs:
      ```bash
-     python -m boardgame_recommender preprocess
-     ```
+   uv run boardgames preprocess
+   ```
    - Train the embedding model:
-     ```bash
-     python -m boardgame_recommender train
-     ```
+   ```bash
+   uv run boardgames train
+   ```
    - Generate recommendations:
-     ```bash
-     python -m boardgame_recommender recommend \
-         --liked "Risk" "Catan" "Carcassonne" \
-         --players 2 \
-         --time 40 \
-         --amount 8
-     ```
+   ```bash
+   uv run boardgames recommend \
+       --liked "Risk" "Catan" "Carcassonne" \
+       --players 2 \
+       --time 40 \
+       --amount 8
+   ```
+   Use `--config path/to/config.toml` with any command to override defaults.
 
 ## Configuration Overview (`config.toml`)
 
@@ -78,12 +76,12 @@ Paths are resolved relative to the config file, so alternative environments can 
 
 ## Development & Testing
 
-- Run the entire suite: `pytest`
-- Fast unit tests only: `pytest -m "not end_to_end"`
-- Pipeline sanity check: `pytest -m end_to_end`
+- Run the entire suite: `uv run pytest`
+- Fast unit tests only: `uv run pytest -m "not end_to_end"`
+- Pipeline sanity check: `uv run pytest -m end_to_end`
 - Static analysis:
-  - `ruff check src tests`
-  - `mypy --explicit-package-bases src/boardgame_recommender`
+  - `uv run ruff check src tests`
+  - `uv run ty backend/src cli/src`
 
 Consider installing `pre-commit` hooks so linting, typing, and tests run before each commit:
 

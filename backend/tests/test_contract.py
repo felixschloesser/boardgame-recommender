@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import quote
 
@@ -10,7 +11,8 @@ from requests.structures import CaseInsensitiveDict
 from schemathesis.core import NotSet
 
 # Load the OpenAPI schema from the provided YAML file
-schema = schemathesis.openapi.from_path("openapi.yaml")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+schema = schemathesis.openapi.from_path(PROJECT_ROOT / "openapi.yaml")
 
 # Use FastAPI's TestClient to make requests
 client = TestClient(app)

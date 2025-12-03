@@ -122,7 +122,13 @@ def sample_features() -> pl.DataFrame:
         {
             "bgg_id": [1, 2, 3, 4],
             "name": ["Alpha", "Beta", "Gamma", "Delta"],
-            "text_description": [
+            "description": [
+                "Cooperative adventure game with dice rolling",
+                "Economic engine builder with worker placement",
+                "Light party card game focused on bluffing",
+                "Area control battle with asymmetric factions",
+            ],
+            "text_description_tokens": [
                 "Cooperative adventure game with dice rolling",
                 "Economic engine builder with worker placement",
                 "Light party card game focused on bluffing",
@@ -174,75 +180,3 @@ def recommendation_context(
         config=recommendation_config,
     )
 
-
-@pytest.fixture
-def config_factory():
-    def _factory(base_dir: Path) -> Config:
-        paths = PathsConfig(
-            stopwords_file=base_dir / "stopwords.txt",
-            synonyms_file=base_dir / "synonyms.toml",
-            raw_data_directory=base_dir / "raw",
-            processed_features_directory=base_dir / "processed",
-            embeddings_directory=base_dir / "embeddings",
-        )
-        filters = PreprocessingFilters(
-            max_year=2025,
-            min_popularity_quantile=0.5,
-            min_avg_rating=6.0,
-            max_required_players=4,
-            max_playing_time_minutes=120,
-        )
-        weights = FeatureWeightsConfig(
-            description=1.0,
-            mechanics=1.0,
-            categories=1.0,
-            themes=1.0,
-            numeric=1.0,
-        )
-        features = FeaturesConfig(
-            text=["description"],
-            categorical=["mechanics"],
-            numeric=["avg_rating"],
-            weights=weights,
-        )
-        tokenization = TokenizationConfig(
-            unify_synonyms=True,
-            remove_common_domain_words=True,
-            ngram_range=(1, 2),
-        )
-        preprocessing = PreprocessingConfig(
-            filters=filters,
-            features=features,
-            tokenization=tokenization,
-        )
-        training = TrainingConfig(
-            text_vectorization=TextVectorizationConfig(
-                min_document_occurrences=1,
-                max_document_frequency=1.0,
-                equalize_description_length=True,
-                downweight_repeated_terms=False,
-            ),
-            embedding_model=EmbeddingModelConfig(
-                normalize_embedding_vectors=False,
-                embedding_dimensions=2,
-            ),
-        )
-        recommendation = RecommendationConfig(
-            similarity_aggregation="max",
-            preference_cluster=PreferenceClusterConfig(
-                min_samples_per_centroid=2,
-                dynamic_centroids=False,
-                centroid_scaling_factor=0.5,
-            ),
-            random_seed=7,
-        )
-        return Config(
-            random_seed=7,
-            logging_level="INFO",
-            paths=paths,
-            preprocessing=preprocessing,
-            training=training,
-            recommendation=recommendation,
-        )
-
-    return _factory

@@ -11,7 +11,8 @@ filterwarnings = [
 dev = [
     "pytest",
     "ruff",
-    "mypy",
+    "ty",
+    "vulture>=2.14",
 ]
 
 [tool.ruff]
@@ -20,29 +21,3 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-strict = true
-strict_optional = true
-ignore_missing_imports = false
-namespace_packages = false
-
-[[tool.mypy.overrides]]
-module = [
-    "tqdm.*",
-    "scipy.*",
-    "sklearn.*",
-]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-    "tests.*",
-    "cli.tests.*",
-    "backend.tests.*",
-]
-disallow_untyped_defs = false
-check_untyped_defs = false
-ignore_errors = true
