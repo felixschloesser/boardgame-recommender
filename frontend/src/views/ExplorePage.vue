@@ -3,6 +3,12 @@ import { RouterLink } from 'vue-router'
 import { ref } from 'vue'
 import GameAdder from '@/components/GameAdder.vue'
 
+interface Props {
+  id?: string // id can be undefined if not passed as a prop
+}
+
+const props = defineProps<Props>()
+
 const exampleOptions = [
   { id: '1', name: 'Catan' },
   { id: '2', name: 'Pandemic' },
@@ -31,7 +37,7 @@ const confirm = () => {
     ><RouterLink to="/wishlist"><div>Wishlist</div></RouterLink>
   </nav>
   <h1>Enter games you already tried and liked here:</h1>
-  <GameAdder ref="addedGames" :options="exampleOptions" />
+  <GameAdder ref="addedGames" :options="exampleOptions" :id="props.id" />
   <h1>Enter preferred number of players:</h1>
   <input type="number" min="1" v-model="playerCount" />
   <button @click="confirm">Get Recommendations</button>

@@ -56,10 +56,13 @@ const recommendations = ref<Recommendation[]>([
       :key="rec.boardgame.id"
       :recommendation="rec"
       :explanationStyle="props.explanationStyle"
+      size="large"
     />
   </div>
   <div class="floating-footer">
-    <button class="floating-button">Change Preferences</button>
+    <button class="floating-button">
+      <RouterLink :to="'/explore/' + props.id">Change Preferences</RouterLink>
+    </button>
   </div>
 </template>
 

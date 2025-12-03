@@ -1,26 +1,35 @@
 <script lang="ts" setup>
 import type { Recommendation } from '../recommendation.mjs'
+import { addRecommendationToWishlist } from '../wishlist.mjs'
 
 interface Props {
   recommendation: Recommendation
   explanationStyle: 'analogy' | 'feature'
+  size: 'small' | 'large'
+}
+
+const addToWishList = () => {
+  addRecommendationToWishlist(props.recommendation)
 }
 
 const props = defineProps<Props>()
 </script>
 
 <template>
-  <div class="recommendation-card">
+  <div :class="`recommendation-card-${props.size}`">
     <div style="padding: 8px">
       <div class="game-image">
         <img :src="props.recommendation.boardgame.image_url" alt="Game image" />
       </div>
     </div>
     <div>
-      <div class="game-title">
+      <div :class="`game-title-${props.size}`">
         <h2>{{ props.recommendation.boardgame.title }}</h2>
-        <div class="wishlist-button">
-          <button>{{ '<3' }}</button>
+        <div v-if="props.size === 'large'" class="wishlist-button">
+          <button @click="addToWishList">{{ '<3' }}</button>
+        </div>
+        <div v-else>
+          <button>{{ '>' }}</button>
         </div>
       </div>
       <div class="explanation">
@@ -43,7 +52,7 @@ const props = defineProps<Props>()
           </div>
         </div>
       </div>
-      <div class="redirect-arrow">
+      <div v-if="props.size === 'large'" class="redirect-arrow">
         <button>{{ '→' }}</button>
       </div>
     </div>
@@ -51,7 +60,7 @@ const props = defineProps<Props>()
 </template>
 
 <style scoped>
-.recommendation-card {
+.recommendation-card-large {
   border: 2px solid #000;
   border-radius: 8px;
   display: flex;
@@ -63,10 +72,28 @@ const props = defineProps<Props>()
   box-shadow: 2px 2px 12px rgba(0, 0, 0, 0.1);
 }
 
-.game-title {
+.recommendation-card-small {
+  border: 2px solid #000;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  width: 150px;
+  padding: 16px;
+  margin: 16px auto;
+  box-shadow: 2px 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.game-title-large {
   display: flex;
   justify-content: space-between;
   width: 180px;
+  align-items: center;
+}
+
+.game-title-small {
+  display: flex;
+  justify-content: space-between;
+  width: 150px;
   align-items: center;
 }
 

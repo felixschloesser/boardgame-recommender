@@ -7,7 +7,7 @@ import RecommendationsPage from '../views/RecommendationsPage.vue'
 const routes = [
   { path: '/', name: 'home', component: HomePage },
   { path: '/wishlist', name: 'wishlist', component: WishList },
-  { path: '/explore', name: 'explore', component: ExplorePage },
+  { path: '/explore/:id?', name: 'explore', component: ExplorePage, props: true },
   {
     path: '/recommendations/:id',
     name: 'recommendations',
