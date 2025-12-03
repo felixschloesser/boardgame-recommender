@@ -184,7 +184,7 @@ components:
 
             references:
               type: array
-              description: Reference-based reasoning using familiar games selected by the backend.
+              description: Reference-based reasoning using familiar games.
               minItems: 1
               maxItems: 3
               items:
@@ -250,13 +250,7 @@ components:
         liked_games:
           type: array
           uniqueItems: true
-          default: []
-          items: { type: integer, minimum: 1 }
-
-        disliked_games:
-          type: array
-          uniqueItems: true
-          default: []
+          minItems: 1
           items: { type: integer, minimum: 1 }
 
         play_context:
@@ -267,45 +261,16 @@ components:
             duration:
               type: string
               enum: ["short", "medium", "long"]
-
-        preference_tags:
-          type: array
-          uniqueItems: true
-          default: []
-          items:
-            type: string
-            enum:
-              - strategy
-              - cooperative
-              - family-friendly
-              - low-luck
-              - thematic
-              - party
-              - economic
-              - abstract
-
-        avoid_tags:
-          type: array
-          uniqueItems: true
-          default: []
-          items:
-            type: string
-            enum:
-              - strategy
-              - cooperative
-              - family-friendly
-              - low-luck
-              - thematic
-              - party
-              - economic
-              - abstract
+          required: ["players"]
 
         num_results:
           type: integer
           minimum: 1
           maximum: 100
           default: 10
-      required: [num_results]
+      required: [num_results, liked_games, play_context]
+
+
 
     RecommendationResponse:
       type: object
@@ -418,7 +383,8 @@ paths:
         header pointing to `/recommendation/{session_id}`. Clients SHOULD navigate to or store
         that URL (e.g., update browser history) and use GET `/recommendation/{session_id}` to
         render or refresh the session view so reloads remain on the same recommendation.
-        `Location` SHOULD be an absolute URL (e.g., `http://host/api/recommendation/{session_id}`).
+        `Location` SHOULD be an absolute URL (e.g., `http://host/api/recommendation/{session_id}`). The `duration`
+        field in `play_context` is optional; clients may omit it and send only `players`.
       security:
         - sessionCookie: []
       requestBody:
@@ -431,12 +397,16 @@ paths:
                 summary: Generate recommendations
                 value:
                   liked_games: [13, 9209, 30549]
-                  disliked_games: [8]
+                  play_context:
+                    players: 4
+                  num_results: 5
+              recommend_with_duration:
+                summary: Generate recommendations with duration
+                value:
+                  liked_games: [13, 9209, 30549]
                   play_context:
                     players: 4
                     duration: "medium"
-                  preference_tags: ["strategy", "low-luck"]
-                  avoid_tags: ["party"]
                   num_results: 5
       responses:
         "201":
@@ -459,12 +429,9 @@ paths:
                     experiment_group: "A"
                     intent:
                       liked_games: [13, 9209, 30549]
-                      disliked_games: [8]
                       play_context:
                         players: 4
                         duration: "medium"
-                      preference_tags: ["strategy", "low-luck"]
-                      avoid_tags: ["party"]
                       num_results: 5
                     recommendations:
                       - boardgame:
@@ -571,12 +538,9 @@ paths:
                     experiment_group: "A"
                     intent:
                       liked_games: [13, 9209, 30549]
-                      disliked_games: []
                       play_context:
                         players: 4
                         duration: "medium"
-                      preference_tags: ["strategy"]
-                      avoid_tags: []
                       num_results: 5
                     recommendations:
                     - boardgame:
@@ -615,12 +579,9 @@ paths:
                     experiment_group: "A"
                     intent:
                       liked_games: [13, 9209, 30549]
-                      disliked_games: []
                       play_context:
                         players: 4
                         duration: "medium"
-                      preference_tags: ["strategy"]
-                      avoid_tags: []
                       num_results: 5
                     recommendations:
                       - boardgame:
