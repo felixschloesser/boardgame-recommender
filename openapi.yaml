@@ -341,10 +341,14 @@ paths:
           application/json:
             schema:
               type: object
-              unevaluatedProperties: false
               required: [study_token]
               properties:
                 study_token: { type: string, minLength: 1 }
+            examples:
+              create_session:
+                summary: Create session
+                value:
+                  study_token: "token-abc123"
       responses:
         "200":
           description: Session created.
@@ -355,11 +359,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Participant"
+              examples:
+                success:
+                  summary: Session created
+                  value:
+                    participant_id: "p-48f2d0"
+                    study_group: "control"
         "400":
           description: Invalid study token.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+              examples:
+                invalid_token:
+                  summary: Unknown or expired study token
+                  value:
+                    type: "https://example.com/errors/validation-error"
+                    title: "Invalid study token"
+                    status: 400
+                    detail: "The provided study token is invalid or expired."
+                    code: "INVALID_STUDY_TOKEN"
 
     delete:
       tags: [auth]
@@ -372,13 +391,28 @@ paths:
         "401":
           description: Unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+              examples:
+                unauthorized:
+                  summary: Missing session cookie
+                  value:
+                    type: "https://example.com/errors/unauthorized"
+                    title: "Authentication required"
+                    status: 401
+                    detail: "A valid session cookie is required to access this resource."
+                    code: "AUTH_INVALID_SESSION"
 
   /recommendation:
     post:
       tags: [recommendations]
       summary: Generate recommendations for a participant.
+      description: >
+        Creates a recommendation session and returns the session payload along with a `Location`
+        header pointing to `/recommendation/{session_id}`. Clients SHOULD navigate to or store
+        that URL (e.g., update browser history) and use GET `/recommendation/{session_id}` to
+        render or refresh the session view so reloads remain on the same recommendation.
+        `Location` SHOULD be an absolute URL (e.g., `http://host/api/recommendation/{session_id}`).
       security:
         - sessionCookie: []
       requestBody:
@@ -386,27 +420,119 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/RecommendationRequest" }
+            examples:
+              recommend:
+                summary: Generate recommendations
+                value:
+                  liked_games: [13, 9209, 30549]
+                  disliked_games: [8]
+                  play_context:
+                    players: 4
+                    duration: "medium"
+                  preference_tags: ["strategy", "low-luck"]
+                  avoid_tags: ["party"]
+                  num_results: 5
       responses:
         "201":
           description: Recommendation session created.
+          headers:
+            Location:
+              description: URL of the created recommendation session resource.
+              schema: { type: string, format: uri }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RecommendationResponse" }
+              examples:
+                created:
+                  summary: Recommendations returned
+                  value:
+                    session_id: "sess-123"
+                    participant_id: "p-48f2d0"
+                    created_at: "2024-05-01T12:34:56Z"
+                    model_version: "v1.3.2"
+                    experiment_group: "A"
+                    intent:
+                      liked_games: [13, 9209, 30549]
+                      disliked_games: [8]
+                      play_context:
+                        players: 4
+                        duration: "medium"
+                      preference_tags: ["strategy", "low-luck"]
+                      avoid_tags: ["party"]
+                      num_results: 5
+                    recommendations:
+                      - boardgame:
+                          id: "36218"
+                          title: "Dominion"
+                          description: "Pioneering deck-builder where each game uses a unique kingdom card set."
+                          mechanics: ["Deck Building", "Hand Management"]
+                          genre: ["Strategy", "Economic"]
+                          themes: ["Medieval"]
+                          min_players: 2
+                          max_players: 4
+                          complexity: 2.3
+                          age_recommendation: 13
+                          num_user_ratings: 120000
+                          avg_user_rating: 7.5
+                          year_published: 2008
+                          playing_time_minutes: 30
+                          image_url: "https://example.com/images/dominion.jpg"
+                          bgg_url: "https://boardgamegeek.com/boardgame/36218/dominion"
+                        explanation:
+                          type: "features"
+                          features:
+                            - label: "Deck-building with tactical cycling"
+                              category: "mechanic"
+                            - label: "Plays in ~30 minutes"
+                              category: "playtime"
+                            - label: "Light economic engine"
+                              category: "genre"
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+              examples:
+                bad_request:
+                  summary: Invalid liked_games entry
+                  value:
+                    type: "https://example.com/errors/validation-error"
+                    title: "Validation failed"
+                    status: 400
+                    detail: "One or more input parameters were invalid."
+                    code: "VALIDATION_ERROR"
+                    invalid_params:
+                      - name: "liked_games[0]"
+                        reason: "Must be an integer."
+                        code: "TYPE_ERROR"
         "401":
           description: Unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+              examples:
+                unauthorized:
+                  summary: Session missing
+                  value:
+                    type: "https://example.com/errors/unauthorized"
+                    title: "Authentication required"
+                    status: 401
+                    detail: "A valid session cookie is required to access this resource."
+                    code: "AUTH_INVALID_SESSION"
         "503":
           description: Recommender unavailable.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+              examples:
+                unavailable:
+                  summary: Backend busy
+                  value:
+                    type: "https://example.com/errors/service-unavailable"
+                    title: "Recommender unavailable"
+                    status: 503
+                    detail: "Recommendation service is temporarily unavailable. Please retry."
+                    code: "RECOMMENDER_UNAVAILABLE"
 
   /recommendation/{session_id}:
     get:
@@ -425,16 +551,123 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RecommendationResponse" }
+              examples:
+                session_features:
+                  summary: Previously created session (feature-style explanations)
+                  value:
+                    session_id: "sess-123"
+                    participant_id: "p-48f2d0"
+                    created_at: "2024-05-01T12:34:56Z"
+                    model_version: "v1.3.2"
+                    experiment_group: "A"
+                    intent:
+                      liked_games: [13, 9209, 30549]
+                      disliked_games: []
+                      play_context:
+                        players: 4
+                        duration: "medium"
+                      preference_tags: ["strategy"]
+                      avoid_tags: []
+                      num_results: 5
+                    recommendations:
+                    - boardgame:
+                        id: "68448"
+                        title: "7 Wonders"
+                        description: "Draft cards over three ages to build your civilization."
+                        mechanics: ["Card Drafting", "Set Collection"]
+                        genre: ["Strategy", "Civilization"]
+                        themes: ["Ancient"]
+                        min_players: 2
+                        max_players: 7
+                        complexity: 2.3
+                        age_recommendation: 10
+                        num_user_ratings: 250000
+                        avg_user_rating: 7.7
+                        year_published: 2010
+                        playing_time_minutes: 40
+                        image_url: "https://example.com/images/7-wonders.jpg"
+                        bgg_url: "https://boardgamegeek.com/boardgame/68448/7-wonders"
+                      explanation:
+                        type: "features"
+                        features:
+                          - label: "Fast card drafting"
+                            category: "mechanic"
+                          - label: "Plays up to 7 in ~40 minutes"
+                            category: "playtime"
+                          - label: "Light civilization tableau building"
+                            category: "genre"
+                session_references:
+                  summary: Previously created session (reference-style explanations)
+                  value:
+                    session_id: "sess-124"
+                    participant_id: "p-48f2d0"
+                    created_at: "2024-05-01T13:00:00Z"
+                    model_version: "v1.3.2"
+                    experiment_group: "A"
+                    intent:
+                      liked_games: [13, 9209, 30549]
+                      disliked_games: []
+                      play_context:
+                        players: 4
+                        duration: "medium"
+                      preference_tags: ["strategy"]
+                      avoid_tags: []
+                      num_results: 5
+                    recommendations:
+                      - boardgame:
+                          id: "36218"
+                          title: "Dominion"
+                          description: "Pioneering deck-builder where each game uses a unique kingdom card set."
+                          mechanics: ["Deck Building", "Hand Management"]
+                          genre: ["Strategy", "Economic"]
+                          themes: ["Medieval"]
+                          min_players: 2
+                          max_players: 4
+                          complexity: 2.3
+                          age_recommendation: 13
+                          num_user_ratings: 120000
+                          avg_user_rating: 7.5
+                          year_published: 2008
+                          playing_time_minutes: 30
+                          image_url: "https://example.com/images/dominion.jpg"
+                          bgg_url: "https://boardgamegeek.com/boardgame/36218/dominion"
+                        explanation:
+                          type: "references"
+                          references:
+                            - bgg_id: 13
+                              title: "Catan"
+                            - bgg_id: 9209
+                              title: "Ticket to Ride"
+                            - bgg_id: 30549
+                              title: "Pandemic"
         "401":
           description: Unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+              examples:
+                unauthorized:
+                  summary: Missing session cookie
+                  value:
+                    type: "https://example.com/errors/unauthorized"
+                    title: "Authentication required"
+                    status: 401
+                    detail: "A valid session cookie is required to access this resource."
+                    code: "AUTH_INVALID_SESSION"
         "404":
           description: Session not found.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+              examples:
+                not_found:
+                  summary: Unknown session
+                  value:
+                    type: "https://example.com/errors/session-not-found"
+                    title: "Session not found"
+                    status: 404
+                    detail: "No recommendation session exists with the specified ID."
+                    code: "SESSION_NOT_FOUND"
 
   /games:
     get:
@@ -490,12 +723,61 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/BoardGame"
+              examples:
+                page:
+                  summary: Paginated boardgames
+                  value:
+                    total: 2
+                    limit: 10
+                    offset: 0
+                    items:
+                      - id: "13"
+                        title: "Catan"
+                        description: "Trade, build, and settle on the island of Catan."
+                        mechanics: ["Trading", "Dice Rolling"]
+                        genre: ["Strategy", "Economic"]
+                        themes: ["Medieval"]
+                        min_players: 3
+                        max_players: 4
+                        complexity: 2.3
+                        age_recommendation: 10
+                        num_user_ratings: 150000
+                        avg_user_rating: 7.2
+                        year_published: 1995
+                        playing_time_minutes: 75
+                        image_url: "https://example.com/images/catan.jpg"
+                        bgg_url: "https://boardgamegeek.com/boardgame/13/catan"
+                      - id: "1406"
+                        title: "Monopoly"
+                        description: "Buy, trade, and build to bankrupt opponents."
+                        mechanics: ["Roll and Move", "Player Elimination"]
+                        genre: ["Family", "Economic"]
+                        themes: ["Modern"]
+                        min_players: 2
+                        max_players: 8
+                        complexity: 1.6
+                        age_recommendation: 8
+                        num_user_ratings: 120000
+                        avg_user_rating: 4.4
+                        year_published: 1935
+                        playing_time_minutes: 120
+                        image_url: "https://example.com/images/monopoly.jpg"
+                        bgg_url: "https://boardgamegeek.com/boardgame/1406/monopoly"
         "400":
           description: Invalid pagination parameters.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                invalid_pagination:
+                  summary: Invalid pagination
+                  value:
+                    type: "https://example.com/errors/validation-error"
+                    title: "Validation failed"
+                    status: 400
+                    detail: "Limit must be between 1 and 100."
+                    code: "RANGE_MAX"
 
   /games/{bgg_id}:
     get:
@@ -513,15 +795,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BoardGame"
+              examples:
+                game:
+                  summary: Single boardgame
+                  value:
+                    id: "13"
+                    title: "Catan"
+                    description: "Trade, build, and settle on the island of Catan."
+                    mechanics: ["Trading", "Dice Rolling"]
+                    genre: ["Strategy", "Economic"]
+                    themes: ["Medieval"]
+                    min_players: 3
+                    max_players: 4
+                    complexity: 2.3
+                    age_recommendation: 10
+                    num_user_ratings: 150000
+                    avg_user_rating: 7.2
+                    year_published: 1995
+                    playing_time_minutes: 75
+                    image_url: "https://example.com/images/catan.jpg"
+                    bgg_url: "https://boardgamegeek.com/boardgame/13/catan"
         "404":
           description: Game not found.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                not_found:
+                  summary: Unknown game
+                  value:
+                    type: "https://example.com/errors/game-not-found"
+                    title: "Game not found"
+                    status: 404
+                    detail: "No boardgame exists with the specified ID."
+                    code: "GAME_NOT_FOUND"
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                invalid_id:
+                  summary: Invalid path parameter
+                  value:
+                    type: "https://example.com/errors/validation-error"
+                    title: "Validation failed"
+                    status: 400
+                    detail: "Path parameter bgg_id must be a positive integer."
+                    code: "FORMAT_INVALID"
