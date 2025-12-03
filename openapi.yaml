@@ -552,7 +552,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RecommendationResponse" }
               examples:
-                session_features:
+                feature_style_explanations:
                   summary: Previously created session (feature-style explanations)
                   value:
                     session_id: "sess-123"
@@ -596,7 +596,7 @@ paths:
                             category: "playtime"
                           - label: "Light civilization tableau building"
                             category: "genre"
-                session_references:
+                reference_style_explanations:
                   summary: Previously created session (reference-style explanations)
                   value:
                     session_id: "sess-124"
