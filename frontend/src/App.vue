@@ -1,13 +1,20 @@
-<script setup lang="ts">
-
-</script>
-
 <template>
-  <h1>You did it!</h1>
-  <p>
-    Visit <a href="https://vuejs.org/" target="_blank" rel="noopener">vuejs.org</a> to read the
-    documentation
-  </p>
+  <main>
+    <RouterView v-slot="{ Component }">
+      <component :is="Component" explanationStyle="analogy" />
+    </RouterView>
+  </main>
 </template>
 
-<style scoped></style>
+<!-- Global styles --->
+<style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+}
+</style>
