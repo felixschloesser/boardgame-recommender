@@ -190,7 +190,7 @@ components:
               items:
                 type: object
                 unevaluatedProperties: false
-                required: [bgg_id, title]
+                required: [bgg_id, title, influence]
                 properties:
                   bgg_id:
                     type: integer
@@ -198,6 +198,9 @@ components:
                   title:
                     type: string
                     minLength: 1
+                  influence:
+                    type: string
+                    enum: ["positive", "neutral", "negative"]
 
             features:
               type: array
@@ -207,7 +210,7 @@ components:
               items:
                 type: object
                 unevaluatedProperties: false
-                required: [label, category]
+                required: [label, category, influence]
                 properties:
                   label:
                     type: string
@@ -220,6 +223,9 @@ components:
                       - playtime
                       - complexity
                       - age
+                  influence:
+                    type: string
+                    enum: ["positive", "neutral", "negative"]
 
               allOf:
                 - if:
@@ -483,10 +489,13 @@ paths:
                           features:
                             - label: "Deck-building with tactical cycling"
                               category: "mechanic"
+                              influence: "positive"
                             - label: "Plays in ~30 minutes"
                               category: "playtime"
+                              influence: "positive"
                             - label: "Light economic engine"
                               category: "genre"
+                              influence: "neutral"
         "400":
           description: Invalid request.
           content:
@@ -636,8 +645,10 @@ paths:
                           references:
                             - bgg_id: 13
                               title: "Catan"
+                              influence: "positive"
                             - bgg_id: 9209
                               title: "Ticket to Ride"
+                              influence: "positive"
                             - bgg_id: 30549
                               title: "Pandemic"
         "401":
