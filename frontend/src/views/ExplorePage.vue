@@ -1,7 +1,10 @@
 <script lang="ts" setup>
 import { RouterLink } from 'vue-router'
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import GameAdder from '@/components/GameAdder.vue'
+import type { Option } from '@/boardGame.mjs'
+import * as api from '@/api.mjs'
+import type BoardGame from '@/boardGame.mjs'
 
 interface Props {
   id?: string // id can be undefined if not passed as a prop
@@ -9,19 +12,15 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const exampleOptions = [
-  { id: '1', name: 'Catan' },
-  { id: '2', name: 'Pandemic' },
-  { id: '3', name: 'Ticket to Ride' },
-  { id: '4', name: 'Carcassonne' },
-  { id: '5', name: '7 Wonders' },
-  { id: '6', name: 'Dominion' },
-  { id: '7', name: 'Azul' },
-  { id: '8', name: 'Splendor' },
-  { id: '9', name: 'Terraforming Mars' },
-  { id: '10', name: 'Wingspan' },
-  { id: '11', name: 'Gloomhaven' },
-]
+const games = ref<Option[]>([])
+
+onMounted(async () => {
+  const gameObj: BoardGame[] = await api.getGames()
+  games.value = gameObj.map((game) => ({
+    id: game.id,
+    name: game.title,
+  }))
+})
 
 const addedGames = ref<InstanceType<typeof GameAdder> | null>(null)
 const playerCount = ref(4)
@@ -37,7 +36,7 @@ const confirm = () => {
     ><RouterLink to="/wishlist"><div>Wishlist</div></RouterLink>
   </nav>
   <h1>Enter games you already tried and liked here:</h1>
-  <GameAdder ref="addedGames" :options="exampleOptions" :id="props.id" />
+  <GameAdder ref="addedGames" :options="games" :id="props.id" />
   <h1>Enter preferred number of players:</h1>
   <input type="number" min="1" v-model="playerCount" />
   <button @click="confirm">Get Recommendations</button>

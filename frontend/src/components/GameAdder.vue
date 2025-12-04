@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import DropDownSearch from './DropDownSearch.vue'
-import type { Option } from '../BoardGame.mjs'
+import type { Option } from '../boardGame.mjs'
 import { onMounted, ref } from 'vue'
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
 
 const props = defineProps<Props>()
 const selectedGame = ref<Option | undefined>(undefined)
+const options = ref<Option[]>(props.options)
 
 const addedGames = ref<Option[]>([])
 
@@ -54,7 +55,7 @@ defineExpose({
     <div>
       <DropDownSearch
         name="liked-games"
-        :options="props.options"
+        :options="options"
         placeholder="Search for a game..."
         :disabled="false"
         :maxItems="5"

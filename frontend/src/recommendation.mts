@@ -1,5 +1,5 @@
 'recommendations'
-import type BoardGame from './BoardGame.mts'
+import type BoardGame from './boardGame.mjs'
 
 export interface Recommendation {
   boardgame: BoardGame

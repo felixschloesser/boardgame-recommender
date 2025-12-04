@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue'
-import type { Option } from '../BoardGame.mts'
+import type { Option } from '../boardGame.mts'
 
 interface Props {
   name: string
