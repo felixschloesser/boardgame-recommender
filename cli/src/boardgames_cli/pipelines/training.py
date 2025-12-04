@@ -281,11 +281,17 @@ def _column_weight(column: str, weights: FeatureWeightsConfig) -> float:
     Map a feature column suffix to its configured weight.
 
     We assume feature naming like:
-        text_description, text_mechanics, text_categories, text_themes, ...
+        text_description_tokens, text_mechanics, text_categories, text_themes, ...
 
     Fallback to 1.0 for unknown suffixes so adding new columns is safe by default.
     """
-    suffix = column.split("_", 1)[1] if "_" in column else column
+    suffix = column
+    if suffix.startswith("text_"):
+        suffix = suffix[len("text_") :]
+    if suffix.endswith("_tokens"):
+        suffix = suffix[: -len("_tokens")]
+    elif "_" in suffix:
+        suffix = suffix.split("_", 1)[1]
     weights_map: dict[str, float] = {
         "description": weights.description,
         "mechanics": weights.mechanics,
@@ -329,6 +335,7 @@ def _base_columns(frame: pl.DataFrame) -> list[str]:
     candidates = (
         "bgg_id",
         "name",
+        "description",
         "avg_rating",
         "min_players",
         "max_players",

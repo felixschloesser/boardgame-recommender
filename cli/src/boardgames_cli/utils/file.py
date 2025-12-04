@@ -159,11 +159,38 @@ def find_latest_run_identifier(path: Path) -> str:
 
 
 def reset_workspace(processed_dir: Path, embeddings_dir: Path) -> None:
-    _reset_directory(processed_dir)
-    _reset_directory(embeddings_dir)
+    deleted: list[str] = []
+    deleted.extend(_reset_directory(processed_dir))
+    deleted.extend(_reset_directory(embeddings_dir))
+    db_deleted = _remove_sqlite_db()
+    if db_deleted:
+        deleted.append(str(db_deleted))
+
+    if deleted:
+        print("Removed:")
+        for path in deleted:
+            print(f" - {path}")
+    else:
+        print("No artifacts removed.")
 
 
-def _reset_directory(path: Path) -> None:
+def _reset_directory(path: Path) -> list[str]:
+    removed: list[str] = []
     if path.exists():
         shutil.rmtree(path)
+        removed.append(str(path))
     path.mkdir(parents=True, exist_ok=True)
+    return removed
+
+
+def _remove_sqlite_db() -> str | None:
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        data_dir = parent / "data"
+        if data_dir.exists():
+            db_path = data_dir / "app.sqlite3"
+            if db_path.exists():
+                db_path.unlink()
+                return str(db_path)
+            break
+    return None

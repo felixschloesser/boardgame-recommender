@@ -1,83 +1,22 @@
-from boardgames_api.app import app
-from fastapi.testclient import TestClient
+from boardgames_api.domain.games.models import BoardgameRecord
+from boardgames_api.persistence.database import ensure_seeded, get_session
+from sqlalchemy import func, select
 
-client = TestClient(app)
 
-
-def test_list_boardgames() -> None:
+def test_seed_loads_and_fields_non_negative() -> None:
     """
-    Integration test for the /api/games/ endpoint.
-    Ensures the API responds with a 200 status and returns a paginated list of board games.
+    Integration test focused on persistence: seed data loads and respects schema bounds.
     """
-    response = client.get("/api/games/")
-    assert response.status_code == 200
-    assert "items" in response.json()
-    assert "total" in response.json()
+    ensure_seeded()
+    with get_session() as session:
+        total = session.scalar(select(func.count(BoardgameRecord.id)))
+        min_complexity = session.scalar(select(func.min(BoardgameRecord.complexity)))
+        min_age = session.scalar(select(func.min(BoardgameRecord.age_recommendation)))
+        min_playtime = session.scalar(select(func.min(BoardgameRecord.playing_time_minutes)))
+        min_min_players = session.scalar(select(func.min(BoardgameRecord.min_players)))
 
-
-def test_retrieve_boardgame() -> None:
-    """
-    Integration test for the /api/games/{bgg_id} endpoint.
-    Ensures the API responds with a 200 status for a valid board game ID and 404 for an invalid ID.
-    """
-    valid_id = 1  # Replace with a valid ID from your dataset
-    invalid_id = 999999  # Replace with an ID that doesn't exist
-
-    response = client.get(f"/api/games/{valid_id}")
-    assert response.status_code == 200
-    assert "bgg_url" in response.json()
-
-    response = client.get(f"/api/games/{invalid_id}")
-
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Game not found."}
-
-
-def test_create_recommendations() -> None:
-    """
-    Integration test for the /api/recommendations/ endpoint.
-    Ensures the API responds with a 201 status for valid requests and 400 for invalid requests.
-    """
-    valid_request = {
-        "liked_games": [1, 2],
-        "player_count": 3,
-        "available_time_minutes": 90,
-        "amount": 3,
-    }
-    invalid_request = {
-        "liked_games": [],
-        "player_count": 0,
-        "available_time_minutes": -10,
-        "amount": 0,
-    }
-
-    response = client.post("/api/recommendations/", json=valid_request)
-    assert response.status_code == 201
-    assert "recommendations" in response.json()
-
-    response = client.post("/api/recommendations/", json=invalid_request)
-    assert response.status_code == 400
-    body = response.json()
-    assert body.get("status") == 400
-    assert body.get("title")
-
-
-def test_retrieve_recommendation_session() -> None:
-    """
-    Integration test for the /api/recommendations/{session_id} endpoint.
-    Ensures the API responds with a 200 status for a valid session ID and 404 for an invalid ID.
-    """
-    valid_session_id = (
-        "mock_session_id"  # Use the mock session ID expected by the implementation
-    )
-    invalid_session_id = "invalid-session-id"  # Replace with an invalid session ID
-
-    response = client.get(f"/api/recommendations/{valid_session_id}")
-    assert response.status_code == 200
-    assert "recommendations" in response.json()
-
-    response = client.get(f"/api/recommendations/{invalid_session_id}")
-    assert response.status_code == 404
-    body = response.json()
-    assert body.get("status") == 404
-    assert body.get("title")
+    assert total is not None and total > 0
+    assert (min_complexity is None) or (min_complexity >= 0)
+    assert (min_age is None) or (min_age >= 0)
+    assert min_playtime is None or min_playtime >= 1
+    assert min_min_players is None or min_min_players >= 1

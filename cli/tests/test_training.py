@@ -28,7 +28,7 @@ def test_train_requires_feature_columns(config):
 def test_feature_schema_detection(sample_features, config):
     embedding = train(features=sample_features, config=config)
     schema = embedding.metadata["feature_schema"]
-    assert set(schema["text"]) == {"text_description"}
+    assert set(schema["text"]) == {"text_description_tokens"}
     assert set(schema["categorical"]) == {"cat_mechanics"}
     assert set(schema["numeric"]) == {
         "num_avg_rating",

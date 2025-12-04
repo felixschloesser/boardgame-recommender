@@ -146,12 +146,13 @@ def preprocess_data(
     finally:
         progress.close()
 
-    quality_report = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "source_rows": games.height,
-        "rows_after_filters": filtered.height,
-        "filters": filters_report,
-    }
+    quality_report = _build_quality_report(
+        raw_games=games,
+        filtered=filtered,
+        features=features,
+        filters_report=filters_report,
+        config=config,
+    )
     return features, quality_report
 
 
@@ -234,6 +235,8 @@ def _apply_filters(
             {
                 "name": "max_year",
                 "value": filters.max_year,
+                "before_rows": before,
+                "after_rows": current.height,
                 "removed": before - current.height,
             }
         )
@@ -256,6 +259,8 @@ def _apply_filters(
                 "name": "min_popularity_quantile",
                 "value": filters.min_popularity_quantile,
                 "threshold": threshold,
+                "before_rows": before,
+                "after_rows": current.height,
                 "removed": before - current.height,
             }
         )
@@ -267,6 +272,8 @@ def _apply_filters(
             {
                 "name": "min_avg_rating",
                 "value": filters.min_avg_rating,
+                "before_rows": before,
+                "after_rows": current.height,
                 "removed": before - current.height,
             }
         )
@@ -280,6 +287,8 @@ def _apply_filters(
         {
             "name": "max_required_players",
             "value": filters.max_required_players,
+            "before_rows": before,
+            "after_rows": current.height,
             "removed": before - current.height,
         }
     )
@@ -293,10 +302,84 @@ def _apply_filters(
         {
             "name": "max_playing_time_minutes",
             "value": filters.max_playing_time_minutes,
+            "before_rows": before,
+            "after_rows": current.height,
             "removed": before - current.height,
         }
     )
     return current, report
+
+
+def _build_quality_report(
+    *,
+    raw_games: pl.DataFrame,
+    filtered: pl.DataFrame,
+    features: pl.DataFrame,
+    filters_report: list[dict[str, Any]],
+    config: PreprocessingConfig,
+) -> dict[str, Any]:
+    filters_with_rates: list[dict[str, Any]] = []
+    for entry in filters_report:
+        before_rows = entry.get("before_rows", 0) or 0
+        removed = entry.get("removed", 0) or 0
+        removal_rate = (removed / before_rows) if before_rows else 0.0
+        filters_with_rates.append(
+            {
+                **entry,
+                "removal_rate": removal_rate,
+            }
+        )
+
+    text_coverage = {
+        name: _summarize_text_column(filtered, name)
+        for name in config.features.text
+        if name in filtered.columns
+    }
+    categorical_coverage = {
+        name: _summarize_categorical_column(filtered, name)
+        for name in config.features.categorical
+        if name in filtered.columns
+    }
+    numeric_coverage = {
+        name: _summarize_numeric_column(filtered, name)
+        for name in config.features.numeric
+        if name in filtered.columns
+    }
+    token_columns = [
+        f"text_{name}_tokens" for name in config.features.text
+    ]
+    token_coverage = {
+        name: _summarize_text_column(features, name)
+        for name in token_columns
+        if name in features.columns
+    }
+
+    duplicates = (
+        raw_games.select(pl.col("BGGId").is_duplicated().sum())
+        .to_series()
+        .item()
+        if "BGGId" in raw_games.columns
+        else 0
+    )
+
+    rows_removed = raw_games.height - filtered.height
+    removal_rate = rows_removed / raw_games.height if raw_games.height else 0.0
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source_rows": raw_games.height,
+        "rows_after_filters": filtered.height,
+        "rows_removed": rows_removed,
+        "removal_rate": removal_rate,
+        "filters": filters_with_rates,
+        "coverage": {
+            "text": text_coverage,
+            "text_tokens": token_coverage,
+            "categorical": categorical_coverage,
+            "numeric": numeric_coverage,
+        },
+        "integrity": {"duplicate_bgg_ids": duplicates},
+    }
 
 
 def _assemble_feature_table(
@@ -318,10 +401,15 @@ def _assemble_feature_table(
         for column in (
             "bgg_id",
             "name",
+            "description",
             "avg_rating",
+            "num_user_ratings",
+            "year_published",
             "min_players",
             "max_players",
             "playing_time_minutes",
+            "complexity",
+            "age_recommendation",
         )
         if column in frame.columns
     ]
@@ -351,15 +439,24 @@ def _assemble_feature_table(
     numeric_exprs = _numeric_expressions(frame, numeric_columns)
     working = frame.with_columns([*text_exprs, *categorical_exprs, *numeric_exprs])
 
+    native_text_columns = [column for column in text_columns if column in working.columns]
+    native_categorical_columns = [
+        column for column in config.features.categorical if column in working.columns
+    ]
     derived_columns = [
         *text_columns.values(),
         *categorical_columns.values(),
         *[f"num_{name}" for name in numeric_columns],
     ]
-    columns_to_select = [column for column in base_columns if column in working.columns]
-    columns_to_select.extend(
-        [column for column in derived_columns if column in working.columns]
-    )
+    columns_to_select: list[str] = []
+    for column in [
+        *base_columns,
+        *native_text_columns,
+        *native_categorical_columns,
+        *derived_columns,
+    ]:
+        if column in working.columns and column not in columns_to_select:
+            columns_to_select.append(column)
     return working.select(columns_to_select)
 
 
@@ -370,7 +467,7 @@ def _materialize_text_columns(
     for name in names:
         if name not in frame.columns:
             raise ValueError(f"Missing text column '{name}' in preprocessed dataset")
-        mapping[name] = f"text_{name}"
+        mapping[name] = f"text_{name}_tokens"
     return mapping
 
 
@@ -385,6 +482,55 @@ def _materialize_categorical_columns(
             )
         mapping[name] = f"cat_{name}"
     return mapping
+
+
+def _summarize_text_column(frame: pl.DataFrame, column: str) -> dict[str, float]:
+    if frame.is_empty():
+        return {
+            "non_empty": 0,
+            "coverage": 0.0,
+            "avg_length": 0.0,
+            "p95_length": 0.0,
+        }
+    lengths_series = frame.select(
+        pl.col(column)
+        .cast(pl.Utf8)
+        .fill_null("")
+        .str.strip_chars()
+        .str.len_chars()
+        .alias("length")
+    ).to_series()
+    non_empty = int((lengths_series > 0).sum())
+    mean_val = lengths_series.mean()
+    quantile_val = lengths_series.quantile(0.95, interpolation="higher")
+    avg_length = float(mean_val) if isinstance(mean_val, (int, float)) else 0.0
+    p95_length = float(quantile_val) if isinstance(quantile_val, (int, float)) else 0.0
+    return {
+        "non_empty": non_empty,
+        "coverage": non_empty / frame.height if frame.height else 0.0,
+        "avg_length": avg_length,
+        "p95_length": p95_length,
+    }
+
+
+def _summarize_categorical_column(
+    frame: pl.DataFrame, column: str
+) -> dict[str, float]:
+    if frame.is_empty():
+        return {"non_empty": 0, "coverage": 0.0, "distinct": 0}
+    values = (
+        frame.select(
+            pl.col(column).cast(pl.Utf8).fill_null("").str.strip_chars().alias("value")
+        )
+        .to_series()
+    )
+    non_empty = int((values.str.len_chars() > 0).sum())
+    distinct = int(values.filter(values.str.len_chars() > 0).n_unique())
+    return {
+        "non_empty": non_empty,
+        "coverage": non_empty / frame.height if frame.height else 0.0,
+        "distinct": distinct,
+    }
 
 
 def _numeric_expressions(
@@ -414,6 +560,35 @@ def _numeric_expressions(
             )
         )
     return expressions
+
+
+def _summarize_numeric_column(frame: pl.DataFrame, column: str) -> dict[str, float]:
+    if frame.is_empty():
+        return {
+            "non_null": 0,
+            "coverage": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "median": 0.0,
+        }
+    stats = (
+        frame.select(
+            pl.col(column).is_not_null().sum().alias("non_null"),
+            pl.col(column).min().alias("min"),
+            pl.col(column).max().alias("max"),
+            pl.col(column).median().alias("median"),
+        )
+        .row(0)
+    )
+    non_null, minimum, maximum, median = stats
+    non_null = int(non_null or 0)
+    return {
+        "non_null": non_null,
+        "coverage": non_null / frame.height if frame.height else 0.0,
+        "min": float(minimum or 0.0),
+        "max": float(maximum or 0.0),
+        "median": float(median or 0.0),
+    }
 
 
 def _tokenize_value(

@@ -19,6 +19,7 @@ node_modules
 data/raw/*
 data/processed/*
 data/embeddings/*
+data/app.sqlite3
 !data/**/.gitkeep
 
 # Misc

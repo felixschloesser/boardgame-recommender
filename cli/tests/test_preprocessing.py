@@ -106,11 +106,15 @@ def test_preprocess_data_generates_feature_table(tmp_path):
     )
 
     assert features.height == 2
-    assert "text_description" in features.columns
+    assert "description" in features.columns
+    assert "text_description_tokens" in features.columns
+    assert "mechanics" in features.columns
     assert "cat_mechanics" in features.columns
     assert "num_avg_rating" in features.columns
 
-    first_description = features["text_description"][0]
+    assert features["description"][0] == "Fast co-op adventure game"
+
+    first_description = features["text_description_tokens"][0]
     assert "cooperative" in first_description
     assert "game" not in first_description
 

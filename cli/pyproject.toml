@@ -14,7 +14,7 @@ dependencies = [
     "numpy",
     "scipy",
     "tqdm",
-    "pydantic",
+    "pydantic"
 ]
 
 [project.scripts]
