@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { RouterLink } from 'vue-router'
+import { getWishlist } from '@/wishlist.mjs'
 </script>
 
 <template>
@@ -7,7 +8,9 @@ import { RouterLink } from 'vue-router'
     <h1>Boardgame Recommender</h1>
     <div>
       <div>
-        <RouterLink to="/wishlist"><button class="nav-button">Wishlist</button></RouterLink>
+        <RouterLink to="/wishlist" v-if="getWishlist().length > 0"
+          ><button class="nav-button">Wishlist</button></RouterLink
+        >
       </div>
       <div>
         <RouterLink to="/explore"><button class="nav-button">Explore</button></RouterLink>

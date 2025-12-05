@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { Recommendation } from '../recommendation.mjs'
-import { addRecommendationToWishlist } from '../wishlist.mjs'
+import { addRecommendationToWishlist, inWishlist } from '../wishlist.mjs'
 
 interface Props {
   recommendation: Recommendation
@@ -10,6 +10,11 @@ interface Props {
 
 const addToWishList = () => {
   addRecommendationToWishlist(props.recommendation)
+}
+
+const inWishList = () => {
+  // todo check if recommendation is in wishlist
+  return inWishlist(props.recommendation)
 }
 
 const props = defineProps<Props>()
@@ -26,7 +31,10 @@ const props = defineProps<Props>()
       <div :class="`game-title-${props.size}`">
         <h2>{{ props.recommendation.boardgame.title }}</h2>
         <div v-if="props.size === 'large'" class="wishlist-button">
-          <button @click="addToWishList">{{ '<3' }}</button>
+          <button @click="addToWishList">
+            <img v-if="inWishList()" src="../assets/filled_heart.svg" alt="Add to Wishlist" />
+            <img v-else src="../assets/heart.svg" alt="remove from Wishlist" />
+          </button>
         </div>
         <div v-else>
           <button>{{ '>' }}</button>

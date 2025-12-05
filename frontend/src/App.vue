@@ -1,3 +1,7 @@
+<script setup lang="ts">
+// todo fetch study group & session info from backend
+</script>
+
 <template>
   <main>
     <RouterView v-slot="{ Component }">
@@ -16,5 +20,18 @@ body {
   flex-direction: column;
   align-items: center;
   height: 100vh;
+}
+
+.icon {
+  width: 35px;
+  height: 35px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
 }
 </style>

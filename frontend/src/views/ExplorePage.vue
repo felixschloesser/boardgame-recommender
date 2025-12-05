@@ -16,10 +16,11 @@ const games = ref<Option[]>([])
 
 onMounted(async () => {
   const gameObj: BoardGame[] = await api.getGames()
-  games.value = gameObj.map((game) => ({
+  const gamesToAdd = gameObj.map((game) => ({
     id: game.id,
     name: game.title,
   }))
+  games.value.push(...gamesToAdd)
 })
 
 const addedGames = ref<InstanceType<typeof GameAdder> | null>(null)
@@ -31,9 +32,11 @@ const confirm = () => {
 </script>
 
 <template>
-  <nav>
-    <RouterLink to="/"><div>Home</div></RouterLink
-    ><RouterLink to="/wishlist"><div>Wishlist</div></RouterLink>
+  <nav class="navbar">
+    <RouterLink to="/"><img src="../assets/home.svg" alt="Home" class="icon" /></RouterLink
+    ><RouterLink to="/wishlist"
+      ><img src="../assets/wishlist.svg" alt="Wishlist" class="icon"
+    /></RouterLink>
   </nav>
   <h1>Enter games you already tried and liked here:</h1>
   <GameAdder ref="addedGames" :options="games" :id="props.id" />

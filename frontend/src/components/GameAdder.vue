@@ -2,6 +2,8 @@
 import DropDownSearch from './DropDownSearch.vue'
 import type { Option } from '../boardGame.mjs'
 import { onMounted, ref } from 'vue'
+import * as api from '@/api.mjs'
+import type BoardGame from '../boardGame.mjs'
 
 interface Props {
   options: Option[]
@@ -40,6 +42,17 @@ const removeGame = (game: Option) => {
   addedGames.value = addedGames.value.filter((g) => g.id !== game.id)
 }
 
+const refetchOptions = async (filter: string) => {
+  options.value.splice(0, options.value.length) // Clear current options
+  const newGames: BoardGame[] = await api.getGames(filter)
+  const newOptions = newGames.map((game) => ({
+    id: game.id,
+    name: game.title,
+  }))
+  options.value.push(...newOptions)
+  // Placeholder for fetching updated options if needed
+}
+
 // Expose the getGames method to the parent
 const getGames = () => {
   return addedGames.value
@@ -60,7 +73,7 @@ defineExpose({
         :disabled="false"
         :maxItems="5"
         @selected="(option) => (selectedGame = option)"
-        @filter="(filter) => console.log('FILTER:', filter)"
+        @filter="(filter) => refetchOptions(filter)"
       /><button @click="addGame">+</button>
     </div>
     <div class="addedgames">
