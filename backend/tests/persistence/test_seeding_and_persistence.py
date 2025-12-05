@@ -5,16 +5,18 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from boardgames_api.domain.games.models import BoardgameRecord
-from boardgames_api.domain.games.schemas import BoardGameResponse
-from boardgames_api.domain.recommendations import repository as rec_repo
+from boardgames_api.domain.games.records import BoardgameRecord
+from boardgames_api.domain.participants.records import StudyGroup
+from boardgames_api.domain.recommendations.models import (
+    RecommendationResult,
+    RecommendationSelection,
+)
+from boardgames_api.domain.recommendations.repository import RecommendationRepository
 from boardgames_api.domain.recommendations.schemas import (
     FeatureExplanation,
-    Recommendation,
     RecommendationExplanation,
     RecommendationRequest,
     ReferenceExplanation,
-    Selection,
 )
 from boardgames_api.persistence import database
 from sqlalchemy import func, select
@@ -76,7 +78,7 @@ def test_seed_skips_invalid_rows(monkeypatch, tmp_path: Path, temp_db: Path) -> 
 
     # Re-seed with the temporary DB
     database.seed_boardgames_from_parquet(parquet_path=parquet_path)
-    with database.get_session() as session:
+    with database.session_scope() as session:
         total = session.scalar(select(func.count(BoardgameRecord.id)))
         min_complexity = session.scalar(select(func.min(BoardgameRecord.complexity)))
         min_age = session.scalar(select(func.min(BoardgameRecord.age_recommendation)))
@@ -103,8 +105,8 @@ def test_recommendation_round_trip_persists_explanations(temp_db: Path) -> None:
     """
     Persisting and reloading a recommendation should preserve explanations and influence.
     """
-    now = datetime.now(timezone.utc).isoformat()
-    recommendation = Recommendation(
+    now = datetime.now(timezone.utc)
+    recommendation = RecommendationResult(
         id="rec-1",
         participant_id="p-1",
         created_at=now,
@@ -112,11 +114,11 @@ def test_recommendation_round_trip_persists_explanations(temp_db: Path) -> None:
             {"liked_games": [1], "num_results": 1, "play_context": {"players": 2}}
         ),
         model_version="vX",
-        experiment_group="A",
-        recommendations=[
-            Selection(
-                boardgame=BoardGameResponse(
-                    id="10",
+        experiment_group=StudyGroup.FEATURES,
+        selections=[
+            RecommendationSelection(
+                boardgame=BoardgameRecord(
+                    id=10,
                     title="Dominion",
                     description="Deckbuilder",
                     mechanics=["Deck Building"],
@@ -153,15 +155,15 @@ def test_recommendation_round_trip_persists_explanations(temp_db: Path) -> None:
             )
         ],
     )
-    rec_repo.save_recommendation(recommendation)
-    reloaded = rec_repo.get_recommendation("rec-1")
+    from boardgames_api.persistence.database import session_scope
+    with session_scope() as session:
+        repo = RecommendationRepository(session)
+        repo.save(recommendation)
+        reloaded = repo.get("rec-1")
     assert reloaded is not None
     assert reloaded.intent.liked_games == [1]
-    selection = reloaded.recommendations[0]
-    assert (
-        selection.explanation.references
-        and selection.explanation.references[0].bgg_id == 1
-    )
+    selection = reloaded.selections[0]
+    assert selection.explanation.references and selection.explanation.references[0].bgg_id == 1
     assert (
         selection.explanation.features
         and selection.explanation.features[0].influence == "positive"

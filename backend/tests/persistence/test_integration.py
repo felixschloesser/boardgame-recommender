@@ -1,5 +1,5 @@
-from boardgames_api.domain.games.models import BoardgameRecord
-from boardgames_api.persistence.database import ensure_seeded, get_session
+from boardgames_api.domain.games.records import BoardgameRecord
+from boardgames_api.persistence.database import ensure_seeded
 from sqlalchemy import func, select
 
 
@@ -8,7 +8,8 @@ def test_seed_loads_and_fields_non_negative() -> None:
     Integration test focused on persistence: seed data loads and respects schema bounds.
     """
     ensure_seeded()
-    with get_session() as session:
+    from boardgames_api.persistence.database import session_scope
+    with session_scope() as session:
         total = session.scalar(select(func.count(BoardgameRecord.id)))
         min_complexity = session.scalar(select(func.min(BoardgameRecord.complexity)))
         min_age = session.scalar(select(func.min(BoardgameRecord.age_recommendation)))

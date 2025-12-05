@@ -1,18 +1,44 @@
-from typing import Annotated
+from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from starlette import status
+from fastapi import APIRouter, Depends, Query
 
-from boardgames_api.domain.games.exceptions import GameNotFoundError
 from boardgames_api.domain.games.schemas import (
     BoardGameResponse,
     BoardGamesQuery,
     PaginatedBoardGamesResponse,
 )
-from boardgames_api.domain.games.service import get_boardgame_by_id, get_boardgames
+from boardgames_api.domain.games.service import get_boardgame, list_boardgames
+from boardgames_api.http.dependencies import db_session
 from boardgames_api.http.errors.schemas import ProblemDetailsResponse
 
 router = APIRouter()
+
+
+def _build_boardgames_query(
+    limit: int = Query(default=10, ge=1, le=100, description="Page size"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+    genre: Optional[List[str]] = Query(
+        default=None, description="Filter by genre", alias="genre"
+    ),
+    mechanics: Optional[List[str]] = Query(
+        default=None, description="Filter by mechanic", alias="mechanics"
+    ),
+    themes: Optional[List[str]] = Query(
+        default=None, description="Filter by theme", alias="themes"
+    ),
+    q: Optional[str] = Query(default=None, description="Full-text search"),
+) -> BoardGamesQuery:
+    """
+    Dependency to map query parameters into a BoardGamesQuery model.
+    """
+    return BoardGamesQuery(
+        limit=limit,
+        offset=offset,
+        genre=genre,
+        mechanics=mechanics,
+        themes=themes,
+        q=q,
+    )
 
 
 @router.get(
@@ -25,13 +51,15 @@ router = APIRouter()
         }
     },
 )
-def list_boardgames(
-    query: Annotated[BoardGamesQuery, Depends()],
+def list_games(
+    query: Annotated[BoardGamesQuery, Depends(_build_boardgames_query)],
+    db=Depends(db_session),
 ) -> PaginatedBoardGamesResponse:
     """
     List canonical boardgames with optional filters.
     """
-    return get_boardgames(
+    return list_boardgames(
+        db=db,
         limit=query.limit,
         offset=query.offset,
         genre=query.genre,
@@ -46,16 +74,11 @@ def list_boardgames(
     response_model=BoardGameResponse,
     responses={404: {"model": ProblemDetailsResponse, "description": "Game not found."}},
 )
-def retrieve_boardgame(
+def get_game(
     bgg_id: int,
+    db=Depends(db_session),
 ) -> BoardGameResponse:
     """
     Retrieve metadata for a specific boardgame by its BGG ID.
     """
-    try:
-        return get_boardgame_by_id(bgg_id)
-    except GameNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        )
+    return get_boardgame(bgg_id, db=db)

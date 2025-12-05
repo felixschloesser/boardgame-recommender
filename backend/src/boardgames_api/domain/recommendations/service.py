@@ -1,125 +1,122 @@
-import datetime
-import random
+import logging
+import os
+import uuid
+from datetime import datetime, timezone
 from typing import List
 
-from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from boardgames_api.domain.games.models import BoardgameRecord
+from boardgames_api.domain.games.records import BoardgameRecord
+from boardgames_api.domain.games.repository import BoardgameRepository
 from boardgames_api.domain.games.schemas import BoardGameResponse
-from boardgames_api.domain.recommendations import repository as recommendations_repo
+from boardgames_api.domain.participants.records import StudyGroup
+from boardgames_api.domain.recommendations.context import RecommendationContext
 from boardgames_api.domain.recommendations.exceptions import (
     RecommendationInputError,
     RecommendationNotFoundError,
+    RecommendationUnauthorizedError,
     RecommendationUnavailableError,
 )
-from boardgames_api.domain.recommendations.schemas import (
-    Recommendation,
-    RecommendationExplanation,
-    RecommendationRequest,
-    ReferenceExplanation,
-    Selection,
+from boardgames_api.domain.recommendations.explainers import (
+    FeatureHintExplanationProvider,
+    SimilarityExplanationProvider,
 )
-from boardgames_api.persistence.database import ensure_seeded, get_session
-from boardgames_api.utils.embedding import get_embedding_store
+from boardgames_api.domain.recommendations.models import (
+    RecommendationResult,
+    RecommendationSelection,
+)
+from boardgames_api.domain.recommendations.pipeline import Explainer, run_pipeline
+from boardgames_api.domain.recommendations.repository import RecommendationRepository
+from boardgames_api.domain.recommendations.schemas import (
+    PlayContextRequest,
+    Recommendation,
+    RecommendationRequest,
+)
+from boardgames_api.domain.recommendations.scoring import EmbeddingScorer
+from boardgames_api.utils.embedding import get_embedding_index
+
+RECOMMENDER_VERSION = os.getenv("BOARDGAMES_RECOMMENDER_VERSION", "v1")
+DEFAULT_SCORER = EmbeddingScorer()
+logger = logging.getLogger(__name__)
 
 
-def _record_to_boardgame(record: BoardgameRecord) -> BoardGameResponse:
-    complexity = record.complexity or 0
-    if complexity < 0:
-        complexity = 0
-
-    age = int(record.age_recommendation or 0)
-    if age < 0:
-        age = 0
-
-    min_players = max(1, record.min_players)
-    max_players = max(min_players, record.max_players)
-    playing_time = max(1, record.playing_time_minutes)
-
-    return BoardGameResponse(
-        id=str(record.id),
-        title=record.title,
-        description=record.description,
-        mechanics=record.mechanics or [],
-        genre=record.genre or [],
-        themes=record.themes or [],
-        min_players=min_players,
-        max_players=max_players,
-        complexity=complexity,
-        age_recommendation=age,
-        num_user_ratings=int(record.num_user_ratings or 0),
-        avg_user_rating=record.avg_user_rating or 0,
-        year_published=int(record.year_published or 0),
-        playing_time_minutes=playing_time,
-        image_url=record.image_url,
-        bgg_url=record.bgg_url,
+def _select_explainer(study_group: StudyGroup) -> Explainer:
+    """
+    Map study group to explanation provider. Scoring remains the same.
+    """
+    if study_group == StudyGroup.FEATURES:
+        return FeatureHintExplanationProvider()
+    if study_group == StudyGroup.REFERENCES:
+        return SimilarityExplanationProvider()
+    raise RecommendationUnavailableError(
+        f"Unknown study group '{study_group.value}' for explainer selection."
     )
 
-
-def _load_boardgames() -> List[BoardGameResponse]:
-    ensure_seeded()
-    with get_session() as session:
-        records = session.scalars(select(BoardgameRecord)).all()
-    return [_record_to_boardgame(record) for record in records] if records else []
-
-
-def generate_recommendations(request: RecommendationRequest) -> Recommendation:
+def _fetch_candidates(
+    play_context: PlayContextRequest, desired_results: int, db: Session
+) -> List[BoardGameResponse]:
     """
-    Generate recommendations based on the participant's preferences.
-    Uses the trained embedding vectors when available; falls back to random sampling otherwise.
+    Fetch a limited set of candidate games filtered by play context.
     """
-    available_games = _load_boardgames()
-    if not available_games:
-        raise RecommendationUnavailableError("The recommender system is currently unavailable.")
+    players = play_context.players
+    duration = play_context.duration
+    max_minutes = None
+    if duration is not None:
+        max_minutes = {
+            "short": 45,
+            "medium": 90,
+            "long": 240,
+        }.get(getattr(duration, "value", duration))
+    limit = max(200, desired_results * 50)
+    repo = BoardgameRepository(db)
+    records = repo.list_for_play_context(
+        players=players,
+        max_minutes=max_minutes,
+        limit=limit,
+    )
+    return [BoardGameResponse.from_record(record) for record in records]
 
-    desired_results = request.num_results
 
-    filtered_games = []
-    for game in available_games:
-        if (
-            request.play_context
-            and request.play_context.players
-            and not (game.min_players <= request.play_context.players <= game.max_players)
-        ):
-            continue
+def generate_recommendations(
+    request: RecommendationRequest,
+    participant_id: str,
+    study_group: StudyGroup,
+    db: Session,
+    scorer: EmbeddingScorer = DEFAULT_SCORER,
+) -> Recommendation:
+    """
+    Generate recommendations based on the participant's preferences using the embedding store.
+    """
+    logger.info(
+        "generate_recommendations: participant=%s study_group=%s liked_games=%d requested=%d",
+        participant_id,
+        study_group.value,
+        len(request.liked_games),
+        request.num_results,
+    )
 
-        if request.play_context and request.play_context.duration:
-            max_minutes = {
-                "short": 45,
-                "medium": 90,
-                "long": 240,
-            }.get(request.play_context.duration.value)
-            if max_minutes is None:
-                max_minutes = 240
-            if game.playing_time_minutes > max_minutes:
-                continue
-
-        filtered_games.append(game)
-
-    if not filtered_games:
+    play_context = request.play_context or PlayContextRequest()
+    candidates = _fetch_candidates(play_context, request.num_results, db)
+    if not candidates:
         context_parts: list[str] = []
-        if request.play_context and request.play_context.players:
-            context_parts.append(f"player count {request.play_context.players}")
-        if request.play_context and request.play_context.duration:
-            context_parts.append(f"duration '{request.play_context.duration.value}'")
+        if play_context.players:
+            context_parts.append(f"player count {play_context.players}")
+        if play_context.duration:
+            context_parts.append(f"duration '{play_context.duration.value}'")
         context_msg = f" for {', '.join(context_parts)}" if context_parts else ""
         raise RecommendationInputError(
             f"No recommendations could be generated{context_msg}. "
             "Try adjusting player count, duration, or liked games."
         )
 
-    store = get_embedding_store()
+    store = get_embedding_index()
     if store is None:
         raise RecommendationUnavailableError(
-            (
-                "Embedding store is not available; "
-                "train and load embeddings before requesting recommendations."
-            )
+            "Embedding store is not available; train and load embeddings before "
+            "requesting recommendations."
         )
-    response_recommendations: list[Selection] = []
 
     missing_liked = [int(liked) for liked in request.liked_games if not store.has_id(int(liked))]
-    liked_ids = [int(liked) for liked in request.liked_games if store.has_id(int(liked))]
     if missing_liked:
         missing_str = ", ".join(str(g) for g in missing_liked)
         raise RecommendationInputError(
@@ -127,69 +124,81 @@ def generate_recommendations(request: RecommendationRequest) -> Recommendation:
             "Choose liked games that exist in the dataset."
         )
 
-    candidate_ids = [int(game.id) for game in filtered_games if store.has_id(int(game.id))]
-    if not candidate_ids:
-        raise RecommendationUnavailableError(
-            (
-                "No candidate games with embeddings matched the filters; "
-                "try adjusting constraints or regenerating embeddings."
-            )
-        )
-
-    scores = store.score_candidates(liked_ids, candidate_ids)
-
-    if not scores:
-        raise RecommendationUnavailableError(
-            "Unable to score candidates with the current embeddings; retrain or adjust inputs."
-        )
-
-    filtered_by_id = {int(game.id): game for game in filtered_games}
-    ranked_ids = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    for game_id, score in ranked_ids[:desired_results]:
-        game = filtered_by_id.get(int(game_id))
-        if not game:
-            continue
-        references = [
-            ReferenceExplanation(
-                bgg_id=liked,
-                title=store.get_name(liked) or "",
-                influence="positive",
-            )
-            for liked in liked_ids[:3]
-        ]
-        explanation = RecommendationExplanation(
-            type="references",
-            references=references,
-        )
-        response_recommendations.append(
-            Selection(
-                boardgame=game,
-                explanation=explanation,
-            )
-        )
-
-    rec_id = f"rec_{random.randint(1000, 9999)}"
-    participant_id = f"participant_{random.randint(1000, 9999)}"
-
-    recommendation = Recommendation(
-        id=rec_id,
+    context = RecommendationContext(
+        liked_games=list(request.liked_games),
+        play_context=play_context,
+        num_results=request.num_results,
+        candidates=candidates,
         participant_id=participant_id,
-        created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        intent=request,
-        model_version=(store.run_identifier if store else "v1"),
-        experiment_group="default",
-        recommendations=response_recommendations[:desired_results],
+        study_group=study_group,
+        embedding_index=store,
     )
 
-    recommendations_repo.save_recommendation(recommendation)
-    return recommendation
+    explainer = _select_explainer(study_group)
+    selections = run_pipeline(context=context, scorer=scorer, explainer=explainer)
+
+    rec_id = f"rec-{uuid.uuid4().hex}"
+    result = RecommendationResult(
+        id=rec_id,
+        participant_id=participant_id,
+        created_at=datetime.now(timezone.utc),
+        intent=request,
+        model_version=RECOMMENDER_VERSION,
+        experiment_group=study_group,
+        selections=[
+            RecommendationSelection(
+                boardgame=BoardgameRecord(
+                    id=int(sel.boardgame.id),
+                    title=sel.boardgame.title,
+                    description=sel.boardgame.description,
+                    mechanics=sel.boardgame.mechanics,
+                    genre=sel.boardgame.genre,
+                    themes=sel.boardgame.themes,
+                    min_players=sel.boardgame.min_players,
+                    max_players=sel.boardgame.max_players,
+                    complexity=sel.boardgame.complexity,
+                    age_recommendation=sel.boardgame.age_recommendation,
+                    num_user_ratings=sel.boardgame.num_user_ratings,
+                    avg_user_rating=sel.boardgame.avg_user_rating,
+                    year_published=sel.boardgame.year_published,
+                    playing_time_minutes=sel.boardgame.playing_time_minutes,
+                    image_url=sel.boardgame.image_url,
+                    bgg_url=sel.boardgame.bgg_url,
+                ),
+                explanation=sel.explanation,
+            )
+            for sel in selections[: request.num_results]
+        ],
+    )
+
+    RecommendationRepository(db).save(result)
+    logger.info(
+        "recommendation_generated: rec_id=%s participant=%s study_group=%s selections=%d",
+        rec_id,
+        participant_id,
+        study_group.value,
+        len(result.selections),
+    )
+    return Recommendation.from_domain(result)
 
 
-def get_recommendation_snapshot(recommendation_id: str) -> Recommendation:
+def get_recommendation(
+    recommendation_id: str,
+    participant_id: str,
+    db: Session,
+) -> Recommendation:
     """
     Retrieve a stored recommendation by its identifier.
     """
-    rec = recommendations_repo.get_recommendation(recommendation_id)
+    rec = RecommendationRepository(db).get(recommendation_id)
     if not rec:
         raise RecommendationNotFoundError("Recommendation not found.")
-    return rec
+    if rec.participant_id != participant_id:
+        logger.warning(
+            "recommendation_access_denied: rec_id=%s requester=%s owner=%s",
+            recommendation_id,
+            participant_id,
+            rec.participant_id,
+        )
+        raise RecommendationUnauthorizedError("Recommendation belongs to a different participant.")
+    return Recommendation.from_domain(rec)

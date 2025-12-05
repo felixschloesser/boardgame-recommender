@@ -1,9 +1,11 @@
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BoardGameResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str = Field(..., description="Unique identifier for the boardgame.")
     title: str = Field(..., description="Title of the boardgame.")
     description: str = Field(..., description="Description of the boardgame.")
@@ -72,6 +74,8 @@ class PaginatedBoardGamesResponse(BaseModel):
     Pagination envelope for boardgame listings.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     total: int = Field(..., ge=0, description="Total number of items available.")
     limit: int = Field(..., ge=1, le=100, description="Number of items per page.")
     offset: int = Field(..., ge=0, description="Offset for pagination.")
@@ -84,6 +88,8 @@ class BoardGamesQuery(BaseModel):
     """
     Query parameters for listing boardgames.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     limit: int = Field(
         default=10,

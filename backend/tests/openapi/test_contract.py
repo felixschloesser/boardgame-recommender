@@ -11,8 +11,18 @@ from requests.structures import CaseInsensitiveDict
 from schemathesis.core import NotSet
 
 # Load the OpenAPI schema from the provided YAML file
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 schema = schemathesis.openapi.from_path(PROJECT_ROOT / "openapi.yaml")
+
+
+def _setup_auth(client: TestClient) -> dict[str, str]:
+    """Create participant + session for fuzzing authenticated endpoints."""
+    p_resp = client.post("/api/auth/participant", json={})
+    assert p_resp.status_code == 201
+    pid = p_resp.json().get("participant_id")
+    s_resp = client.post("/api/auth/session", json={"participant_id": pid})
+    assert s_resp.status_code == 200
+    return {str(cookie.name): str(cookie.value or "") for cookie in s_resp.cookies.jar}
 
 # Use FastAPI's TestClient to make requests
 client = TestClient(app)
@@ -85,6 +95,9 @@ def test_api(case: Any) -> None:
     files = getattr(case, "files", None)
     if files:
         request_kwargs["files"] = files
+    # If this is a GET with no params but a body example, avoid sending JSON.
+    if case.method.upper() == "GET" and "json" in request_kwargs and not request_kwargs["json"]:
+        request_kwargs.pop("json", None)
 
     client.cookies.clear()
     cookies = _maybe(case.cookies)
@@ -95,6 +108,17 @@ def test_api(case: Any) -> None:
     if cookies:
         for key, value in cookies.items():
             client.cookies.set(key, value)
+    else:
+        # If the endpoint requires auth (has sessionCookie security), set it up.
+        try:
+            securities = case.security or []
+        except AttributeError:
+            securities = []
+        for security in securities:
+            if security and "sessionCookie" in security:
+                for key, value in _setup_auth(client).items():
+                    client.cookies.set(key, value)
+                break
 
     response = client.request(**request_kwargs)
     case.validate_response(_httpx_to_requests(response))

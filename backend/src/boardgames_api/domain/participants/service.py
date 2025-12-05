@@ -1,47 +1,56 @@
+import random
 import uuid
 
-from boardgames_api.domain.participants.exceptions import InvalidStudyTokenError
-from boardgames_api.domain.participants.records import ParticipantRecord
+from sqlalchemy.orm import Session
+
+from boardgames_api.domain.participants.exceptions import (
+    ParticipantAlreadyExistsError,
+    ParticipantNotFoundError,
+    ParticipantValidationError,
+)
+from boardgames_api.domain.participants.records import Participant, StudyGroup
+from boardgames_api.domain.participants.repository import ParticipantRepository
 
 
-def create_session(study_token: str) -> ParticipantRecord:
+def create_session(db: Session) -> Participant:
     """
-    Create a new participant session using a study token.
-    Session persistence is handled by the HTTP layer.
+    Create a new participant with a stable identifier and assigned study group.
     """
-    if not validate_study_token(study_token):
-        raise InvalidStudyTokenError("Invalid study token.")
+    participant_id = _new_participant_id()
+    study_group = assign_study_group()
 
-    participant_id = str(uuid.uuid4())
-    study_group = assign_study_group(study_token)
+    participant = Participant(participant_id=participant_id, study_group=study_group)
+    repo = ParticipantRepository(db)
+    if repo.get(participant_id):
+        raise ParticipantAlreadyExistsError("Participant already exists.")
+    repo.save(participant)
+    return participant
 
-    record = ParticipantRecord(participant_id=participant_id, study_group=study_group)
-    return record
 
-
-def validate_study_token(study_token: str) -> bool:
+def _new_participant_id() -> str:
     """
-    Validate the provided study token.
-
-    Args:
-        study_token (str): The study token to validate.
-
-    Returns:
-        bool: True if the token is valid, False otherwise.
+    Generate a participant identifier that is UUID-based but clearly labeled.
     """
-    # Placeholder logic for token validation
-    return len(study_token) > 0
+    return f"participant-{uuid.uuid4()}"
 
 
-def assign_study_group(study_token: str) -> str:
+def assign_study_group() -> StudyGroup:
     """
-    Assign a study group based on the study token.
-
-    Args:
-        study_token (str): The study token provided by the participant.
-
-    Returns:
-        str: The assigned study group label.
+    Randomly assign a study group on first session creation.
     """
-    # Placeholder logic for assigning study groups
-    return "control" if "control" in study_token.lower() else "experimental"
+    return random.choice([StudyGroup.FEATURES, StudyGroup.REFERENCES])
+
+
+def get_participant(participant_id: str, db: Session) -> Participant:
+    """
+    Load a participant by id or raise if not found.
+    """
+    if not participant_id or not participant_id.startswith("participant-"):
+        raise ParticipantValidationError(
+            "participant_id is required and must start with 'participant-'."
+        )
+    repo = ParticipantRepository(db)
+    participant = repo.get(participant_id)
+    if participant is None:
+        raise ParticipantNotFoundError("Participant not found.")
+    return participant

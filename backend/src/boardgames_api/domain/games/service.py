@@ -1,12 +1,17 @@
 from typing import List, Optional
 
+from sqlalchemy.orm import Session
+
 from boardgames_api.domain.games.exceptions import GameNotFoundError
-from boardgames_api.domain.games.repository import BoardgameFilters, BoardgameRepository
-from boardgames_api.domain.games.schemas import BoardGameResponse, PaginatedBoardGamesResponse
-from boardgames_api.persistence.database import ensure_seeded, get_session
+from boardgames_api.domain.games.repository import BoardgameRepository
+from boardgames_api.domain.games.schemas import (
+    BoardGameResponse,
+    PaginatedBoardGamesResponse,
+)
 
 
-def get_boardgames(
+def list_boardgames(
+    db: Session,
     limit: int,
     offset: int,
     genre: Optional[List[str]] = None,
@@ -17,42 +22,34 @@ def get_boardgames(
     """
     Retrieve a paginated list of boardgames with optional filters.
     """
-    ensure_seeded()
-    with get_session() as session:
-        repo = BoardgameRepository(session)
-        total, records = repo.list(
-            filters=BoardgameFilters(
-                q=q,
-                genre=genre or [],
-                mechanics=mechanics or [],
-                themes=themes or [],
-            ),
-            limit=limit,
-            offset=offset,
-        )
-    paginated_records = records[offset : offset + limit]
+    repo = BoardgameRepository(db)
+    total, records = repo.list(
+        filters={
+            "q": q,
+            "genre": genre or [],
+            "mechanics": mechanics or [],
+            "themes": themes or [],
+        },
+        limit=limit,
+        offset=offset,
+    )
+    items = [record.to_response() for record in records]
 
     return PaginatedBoardGamesResponse(
         total=total,
         limit=limit,
         offset=offset,
-        items=[BoardGameResponse.from_record(record) for record in paginated_records],
+        items=items,
     )
 
 
-def get_boardgame_by_id(bgg_id: int) -> BoardGameResponse:
+def get_boardgame(bgg_id: int, db: Session) -> BoardGameResponse:
     """
     Retrieve a specific boardgame by its BGG ID.
     """
-    sqlite_max_int = 2**63 - 1
-    if bgg_id < 1 or bgg_id > sqlite_max_int:
-        raise GameNotFoundError("Game not found.")
-
-    ensure_seeded()
-    with get_session() as session:
-        repo = BoardgameRepository(session)
-        record = repo.get(bgg_id)
+    repo = BoardgameRepository(db)
+    record = repo.get(bgg_id)
     if record:
-        return BoardGameResponse.from_record(record)
+        return record.to_response()
 
     raise GameNotFoundError("Game not found.")

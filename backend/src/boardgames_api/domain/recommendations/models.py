@@ -1,18 +1,32 @@
-from sqlalchemy import JSON, String
-from sqlalchemy.orm import Mapped, mapped_column
+from __future__ import annotations
 
-from boardgames_api.persistence.database import Base
+from dataclasses import dataclass
+from datetime import datetime
+from typing import List
+
+from boardgames_api.domain.games.records import BoardgameRecord
+from boardgames_api.domain.participants.records import StudyGroup
+from boardgames_api.domain.recommendations.schemas import (
+    RecommendationExplanation,
+    RecommendationRequest,
+)
 
 
-class RecommendationRecord(Base):
-    __tablename__ = "recommendations"
+@dataclass(frozen=True)
+class RecommendationSelection:
+    boardgame: BoardgameRecord
+    explanation: RecommendationExplanation
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    participant_id: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[str] = mapped_column(String, nullable=False)
-    model_version: Mapped[str] = mapped_column(String, nullable=False)
-    experiment_group: Mapped[str] = mapped_column(String, nullable=False)
-    intent: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
-    recommendations: Mapped[list[dict[str, object]]] = mapped_column(
-        JSON, nullable=False
-    )
+
+@dataclass(frozen=True)
+class RecommendationResult:
+    id: str
+    participant_id: str
+    created_at: datetime
+    intent: RecommendationRequest
+    model_version: str
+    experiment_group: StudyGroup
+    selections: List[RecommendationSelection]
+
+
+__all__ = ["RecommendationSelection", "RecommendationResult"]

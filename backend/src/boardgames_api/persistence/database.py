@@ -8,7 +8,7 @@ from typing import Iterator
 import polars as pl
 from sqlalchemy import create_engine, delete, func, inspect, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATA_ROOT = Path(__file__).resolve().parents[4] / "data"
 DEFAULT_DB_PATH = Path(
@@ -20,6 +20,7 @@ DEFAULT_PARQUET_PATH = Path(
         DATA_ROOT / "processed" / "boardgames.parquet",
     )
 ).resolve()
+MIN_BOARDGAMES_COUNT = 1000
 
 
 class Base(DeclarativeBase):
@@ -31,6 +32,7 @@ class Base(DeclarativeBase):
 
 
 _engine: Engine | None = None
+SessionLocal: sessionmaker | None = None
 
 
 def _create_engine(db_path: Path = DEFAULT_DB_PATH) -> Engine:
@@ -39,18 +41,36 @@ def _create_engine(db_path: Path = DEFAULT_DB_PATH) -> Engine:
 
 
 def get_engine() -> Engine:
-    global _engine
+    global _engine, SessionLocal
     if _engine is None:
+        SessionLocal = None  # reset session factory when engine rebuilds
         _engine = _create_engine()
     return _engine
 
 
-@contextmanager
-def get_session() -> Iterator[Session]:
+def get_session() -> Session:
+    """
+    Create a new SQLAlchemy session. Callers manage lifecycle (use as context manager).
+    """
     engine = get_engine()
-    session = Session(engine)
+    global SessionLocal
+    if SessionLocal is None:
+        SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    return SessionLocal()
+
+
+@contextmanager
+def session_scope() -> Iterator[Session]:
+    """
+    Context manager for a session; commits on success, rolls back on error.
+    """
+    session = get_session()
     try:
         yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
@@ -75,13 +95,15 @@ def init_db() -> None:
         }
         if not expected.issubset(columns):
             # Drop legacy table schema (e.g., payload-only) to allow recreate.
-            from boardgames_api.domain.recommendations.models import RecommendationRecord
+            from boardgames_api.domain.recommendations.records import RecommendationRecord
+
             RecommendationRecord.__table__.drop(engine, checkfirst=True)  # type: ignore[attr-defined]
 
-    # Import models here so metadata is populated without creating circular imports.
-    from boardgames_api.domain.games import models as games_models  # noqa: F401
-    from boardgames_api.domain.recommendations import models as rec_models  # noqa: F401
-    Base.metadata.create_all(engine)
+        # Import records here so metadata is populated without creating circular imports.
+        from boardgames_api.domain.games import records as games_records  # noqa: F401
+        from boardgames_api.domain.participants import records as participant_records  # noqa: F401
+        from boardgames_api.domain.recommendations import records as rec_records  # noqa: F401
+        Base.metadata.create_all(engine)
 
 
 def seed_boardgames_from_parquet(
@@ -108,7 +130,7 @@ def seed_boardgames_from_parquet(
             continue
 
     with Session(db_engine) as session:
-        from boardgames_api.domain.games.models import BoardgameRecord
+        from boardgames_api.domain.games.records import BoardgameRecord
 
         session.execute(delete(BoardgameRecord))
         session.add_all(records)
@@ -120,23 +142,46 @@ def seed_boardgames_from_parquet(
 def ensure_seeded() -> None:
     """
     Seed the SQLite database on first use to back API lookups with realistic data.
+    Fails fast if, after seeding, the dataset is too small or clearly invalid.
     """
     init_db()
     engine = get_engine()
     with Session(engine) as session:
-        from boardgames_api.domain.games.models import BoardgameRecord
+        from boardgames_api.domain.games.records import BoardgameRecord
 
-        count = session.scalar(select(func.count(BoardgameRecord.id)))
-        if count and count > 0 and not _boardgames_invalid(session):
+        count = session.scalar(select(func.count(BoardgameRecord.id))) or 0
+        if count >= MIN_BOARDGAMES_COUNT and not _boardgames_invalid(session):
             return
-    seed_boardgames_from_parquet()
+
+    seeded = seed_boardgames_from_parquet()
+
+    with Session(engine) as session:
+        from boardgames_api.domain.games.records import BoardgameRecord
+
+        count = session.scalar(select(func.count(BoardgameRecord.id))) or 0
+        invalid = _boardgames_invalid(session)
+
+    if count < MIN_BOARDGAMES_COUNT or invalid:
+        parquet_hint = (
+            f"Expected at least {MIN_BOARDGAMES_COUNT} games but found {count}. "
+            f"Ensure a valid parquet exists at {DEFAULT_PARQUET_PATH} or set "
+            "BOARDGAMES_PARQUET_PATH to a populated dataset."
+        )
+        if invalid:
+            parquet_hint += (
+                " Detected invalid rows (negative metrics or placeholders); "
+                "regenerate the dataset."
+            )
+        raise RuntimeError(
+            f"Boardgame catalog not seeded properly (loaded {seeded} rows). {parquet_hint}"
+        )
 
 
 def _boardgames_invalid(session: Session) -> bool:
     """
     Detect obviously invalid data that would violate response schema constraints.
     """
-    from boardgames_api.domain.games.models import BoardgameRecord
+    from boardgames_api.domain.games.records import BoardgameRecord
 
     min_complexity = session.scalar(select(func.min(BoardgameRecord.complexity)))
     min_age = session.scalar(select(func.min(BoardgameRecord.age_recommendation)))

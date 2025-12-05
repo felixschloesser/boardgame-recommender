@@ -8,3 +8,7 @@ class RecommendationUnavailableError(Exception):
 
 class RecommendationNotFoundError(Exception):
     """Raised when a stored recommendation cannot be located."""
+
+
+class RecommendationUnauthorizedError(Exception):
+    """Raised when a recommendation is requested by a different participant."""
