@@ -3,6 +3,7 @@ from typing import Iterable
 from boardgames_api.app import app
 from fastapi.testclient import TestClient
 
+# Use module-level client for backward compatibility; new tests use fixtures.
 client = TestClient(app)
 
 
@@ -35,13 +36,16 @@ def _assert_problem_details(
 
 
 def test_recommendations_validation_errors_return_rfc7807_problem_details() -> None:
-    session_resp = client.post("/api/auth/session", json={"study_token": "token"})
+    participant_resp = client.post("/api/auth/participant", json={})
+    assert participant_resp.status_code == 201
+    pid = participant_resp.json().get("participant_id")
+    session_resp = client.post("/api/auth/session", json={"participant_id": pid})
     assert session_resp.status_code == 200
     payload = {
         "liked_games": [0],
         "num_results": 10,
     }
-    response = client.post("/api/recommendations/", json=payload, cookies=session_resp.cookies)
+    response = client.post("/api/recommendation", json=payload, cookies=session_resp.cookies)
 
     assert response.status_code == 400
     assert response.headers.get("content-type", "").startswith("application/problem+json")

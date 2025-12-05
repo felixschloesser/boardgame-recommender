@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Protocol
 
 import numpy as np
 import polars as pl
@@ -68,6 +68,20 @@ class EmbeddingStore:
         return self.__index
 
 
+class EmbeddingIndex(Protocol):
+    """
+    Minimal protocol for embedding-based scoring and references.
+    """
+
+    def has_id(self, bgg_id: int) -> bool: ...
+
+    def score_candidates(
+        self, liked_ids: Iterable[int], candidate_ids: Iterable[int]
+    ) -> dict[int, float]: ...
+
+    def get_name(self, bgg_id: int) -> Optional[str]: ...
+
+
 _store: EmbeddingStore | None = None
 
 
@@ -120,3 +134,10 @@ def get_embedding_store() -> Optional[EmbeddingStore]:
         return _store
     _store = _load_embedding()
     return _store
+
+
+def get_embedding_index() -> Optional[EmbeddingIndex]:
+    """
+    Alias used by the API layer for dependency clarity.
+    """
+    return get_embedding_store()

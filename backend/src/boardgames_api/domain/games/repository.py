@@ -1,93 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, List, Optional, Sequence
+from typing import Any, List, Optional, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 from sqlalchemy.sql import ColumnElement
 
-from boardgames_api.domain.games.models import BoardgameRecord
-
-# ---------------------------------------------------------------------------
-# Filter Model
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class BoardgameFilters:
-    """
-    Query filter specification for boardgame listings.
-
-    q:
-        Substring match for title (case-insensitive).
-    genre, mechanics, themes:
-        Each is a sequence of acceptable string tags.
-        Semantics: ANY-of inside each dimension, AND across dimensions.
-    """
-
-    q: Optional[str] = None
-    genre: Optional[Sequence[str]] = None
-    mechanics: Optional[Sequence[str]] = None
-    themes: Optional[Sequence[str]] = None
-
-
-# ---------------------------------------------------------------------------
-# Predicate Construction
-# ---------------------------------------------------------------------------
-
-
-def build_predicates(filters: BoardgameFilters) -> list[ColumnElement[bool]]:
-    """
-    Build SQLAlchemy boolean expressions for the given filters.
-
-    The repository is intentionally dumb: it expresses filter semantics
-    directly without embedding domain rules.
-    """
-    predicates: list[ColumnElement[bool]] = []
-
-    # Title search — parameter-bound substring match
-    if filters.q:
-        query_term = f"%{filters.q}%"
-        predicates.append(BoardgameRecord.title.ilike(query_term))
-
-    # Multi-valued JSON array membership
-    for column, values in (
-        (BoardgameRecord.genre, filters.genre),
-        (BoardgameRecord.mechanics, filters.mechanics),
-        (BoardgameRecord.themes, filters.themes),
-    ):
-        cond = json_array_any(column, values)
-        if cond is not None:
-            predicates.append(cond)
-
-    return predicates
-
-
-def json_array_any(
-    column, values: Optional[Sequence[str]]
-) -> Optional[ColumnElement[bool]]:
-    """
-    SQLite-correct ANY-membership test for JSON arrays.
-
-    Produces a predicate of the form:
-        json_each(column).value IN (values...)
-
-    If values is None or empty, return None (no predicate).
-    """
-    if not values:
-        return None
-
-    # Table-valued function: json_each(column)
-    #
-    # table_valued("value") exposes a column named "value".
-    # This avoids string concatenation or raw SQL fragments.
-    je = func.json_each(column).table_valued("value")
-
-    # Values returned by json_each are TEXT;
-    # .in_(values) is correct so long as values are strings.
-    return je.c.value.in_(list(values))
-
+from boardgames_api.domain.games.filters import build_predicates
+from boardgames_api.domain.games.records import BoardgameRecord
+from boardgames_api.domain.games.schemas import BoardGameResponse
 
 # ---------------------------------------------------------------------------
 # Repository
@@ -113,7 +34,7 @@ class BoardgameRepository:
 
     def list(
         self,
-        filters: BoardgameFilters,
+        filters: dict | object,
         *,
         limit: int,
         offset: int,
@@ -138,7 +59,19 @@ class BoardgameRepository:
 
         order_by = order_by or BoardgameRecord.id
 
-        predicates = build_predicates(filters)
+        # Expect filters to be a dict-like with possible keys: q, genre, mechanics, themes
+        filt_dict: dict[str, Any] = {}
+        if isinstance(filters, dict):
+            filt_dict = cast(dict[str, Any], filters)
+        else:
+            maybe_dict = getattr(filters, "__dict__", {}) or {}
+            filt_dict = dict(maybe_dict) if isinstance(maybe_dict, dict) else {}
+        predicates = build_predicates(
+            q=filt_dict.get("q"),
+            genre=filt_dict.get("genre"),
+            mechanics=filt_dict.get("mechanics"),
+            themes=filt_dict.get("themes"),
+        )
 
         # Base query
         base_query = select(BoardgameRecord)
@@ -169,3 +102,36 @@ class BoardgameRepository:
         Retrieve a single BoardgameRecord by primary key.
         """
         return self.session.get(BoardgameRecord, record_id)
+
+    def list_for_play_context(
+        self,
+        *,
+        players: Optional[int],
+        max_minutes: Optional[int],
+        limit: int,
+    ) -> List[BoardgameRecord]:
+        """
+        Retrieve records filtered by player count and playing time.
+        """
+        stmt = select(BoardgameRecord)
+        if players is not None:
+            stmt = stmt.where(
+                BoardgameRecord.min_players <= players,
+                BoardgameRecord.max_players >= players,
+            )
+        if max_minutes is not None:
+            stmt = stmt.where(BoardgameRecord.playing_time_minutes <= max_minutes)
+        stmt = stmt.order_by(BoardgameRecord.id).limit(limit)
+        rows = self.session.execute(stmt)
+        return list(rows.scalars())
+
+    # ------------------------
+    # Translators
+    # ------------------------
+
+    @staticmethod
+    def to_response(record: BoardgameRecord) -> BoardGameResponse:
+        return BoardGameResponse.from_record(record)
+
+
+__all__ = ["BoardgameRepository"]

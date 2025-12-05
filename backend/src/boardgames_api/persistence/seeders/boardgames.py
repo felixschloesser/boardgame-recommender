@@ -70,7 +70,7 @@ class BoardgameSeedRow(BaseModel):
 
 
 def row_to_record(row: dict[str, Any]):
-    from boardgames_api.domain.games.models import BoardgameRecord
+    from boardgames_api.domain.games.records import BoardgameRecord
 
     seed = BoardgameSeedRow.model_validate(row)
     return BoardgameRecord(

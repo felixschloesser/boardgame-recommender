@@ -7,7 +7,22 @@ from fastapi.responses import JSONResponse
 from starlette import status as starlette_status
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from boardgames_api.domain.participants.exceptions import InvalidStudyTokenError
+from boardgames_api.domain.games.exceptions import (
+    GameNotFoundError,
+    GameUnavailableError,
+    GameValidationError,
+)
+from boardgames_api.domain.participants.exceptions import (
+    ParticipantAlreadyExistsError,
+    ParticipantNotFoundError,
+    ParticipantValidationError,
+)
+from boardgames_api.domain.recommendations.exceptions import (
+    RecommendationInputError,
+    RecommendationNotFoundError,
+    RecommendationUnauthorizedError,
+    RecommendationUnavailableError,
+)
 from boardgames_api.http.errors.schemas import (
     BadRequestResponse,
     NotFoundResponse,
@@ -114,6 +129,43 @@ def register_exception_handlers(app: FastAPI) -> None:
             )
         return _problem_response(problem, headers=headers)
 
+    @app.exception_handler(RecommendationInputError)
+    def handle_recommendation_input(
+        request: Request, exc: RecommendationInputError
+    ) -> JSONResponse:
+        problem = BadRequestResponse(
+            detail=str(exc),
+            code="VALIDATION_ERROR",
+            invalid_params=None,
+        )
+        return _problem_response(problem)
+
+    @app.exception_handler(RecommendationUnavailableError)
+    def handle_recommendation_unavailable(
+        request: Request, exc: RecommendationUnavailableError
+    ) -> JSONResponse:
+        problem = ProblemDetailsResponse(
+            HTTPStatus.SERVICE_UNAVAILABLE.phrase,
+            status=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            type=ProblemDetailsResponse.__fields__["type"].default,
+        )
+        return _problem_response(problem)
+
+    @app.exception_handler(RecommendationNotFoundError)
+    def handle_recommendation_not_found(
+        request: Request, exc: RecommendationNotFoundError
+    ) -> JSONResponse:
+        problem = NotFoundResponse(detail=str(exc))
+        return _problem_response(problem)
+
+    @app.exception_handler(RecommendationUnauthorizedError)
+    def handle_recommendation_unauthorized(
+        request: Request, exc: RecommendationUnauthorizedError
+    ) -> JSONResponse:
+        problem = UnauthorizedResponse(detail=str(exc) or "Unauthorized.")
+        return _problem_response(problem)
+
     @app.exception_handler(StarletteHTTPException)
     def handle_starlette_http_exception(
         request: Request, exc: StarletteHTTPException
@@ -127,11 +179,55 @@ def register_exception_handlers(app: FastAPI) -> None:
             ),
         )
 
-    @app.exception_handler(InvalidStudyTokenError)
-    def handle_invalid_study_token(request: Request, exc: InvalidStudyTokenError) -> JSONResponse:
+    @app.exception_handler(GameNotFoundError)
+    def handle_game_not_found(request: Request, exc: GameNotFoundError) -> JSONResponse:
+        problem = NotFoundResponse(detail=str(exc))
+        return _problem_response(problem)
+
+    @app.exception_handler(GameValidationError)
+    def handle_game_validation(request: Request, exc: GameValidationError) -> JSONResponse:
         problem = BadRequestResponse(
-            detail=str(exc) or "Invalid study token.",
-            code="INVALID_STUDY_TOKEN",
+            detail=str(exc) or "Invalid game parameters.",
+            code="VALIDATION_ERROR",
+            invalid_params=None,
+        )
+        return _problem_response(problem)
+
+    @app.exception_handler(GameUnavailableError)
+    def handle_game_unavailable(request: Request, exc: GameUnavailableError) -> JSONResponse:
+        problem = ProblemDetailsResponse(
+            HTTPStatus.SERVICE_UNAVAILABLE.phrase,
+            status=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail=str(exc) or "Games data is unavailable.",
+            type=ProblemDetailsResponse.__fields__["type"].default,
+        )
+        return _problem_response(problem)
+
+    @app.exception_handler(ParticipantNotFoundError)
+    def handle_participant_not_found(
+        request: Request, exc: ParticipantNotFoundError
+    ) -> JSONResponse:
+        problem = NotFoundResponse(detail=str(exc) or "Participant not found.")
+        return _problem_response(problem)
+
+    @app.exception_handler(ParticipantAlreadyExistsError)
+    def handle_participant_exists(
+        request: Request, exc: ParticipantAlreadyExistsError
+    ) -> JSONResponse:
+        problem = BadRequestResponse(
+            detail=str(exc) or "Participant already exists.",
+            code="PARTICIPANT_EXISTS",
+            invalid_params=None,
+        )
+        return _problem_response(problem)
+
+    @app.exception_handler(ParticipantValidationError)
+    def handle_participant_validation(
+        request: Request, exc: ParticipantValidationError
+    ) -> JSONResponse:
+        problem = BadRequestResponse(
+            detail=str(exc) or "Invalid participant data.",
+            code="VALIDATION_ERROR",
             invalid_params=None,
         )
         return _problem_response(problem)

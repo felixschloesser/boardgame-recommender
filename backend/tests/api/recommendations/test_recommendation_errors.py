@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from boardgames_api.app import app
 from boardgames_api.domain.games.schemas import BoardGameResponse
-from boardgames_api.domain.recommendations import service as recommendation_service
 from fastapi.testclient import TestClient
+
+from boardgames_api.domain.recommendations import service as recommendation_service
 
 
 class _FakeStore:
@@ -45,13 +46,20 @@ def test_recommendation_returns_400_when_no_candidates(monkeypatch):
     """
     API should return 400 (not 500) when filters remove all candidates.
     """
+
     client = TestClient(app)
-    session_resp = client.post("/api/auth/session", json={"study_token": "token"})
+    participant_resp = client.post("/api/auth/participant", json={})
+    assert participant_resp.status_code == 201
+    pid = participant_resp.json().get("participant_id")
+    session_resp = client.post("/api/auth/session", json={"participant_id": pid})
     assert session_resp.status_code == 200
 
-    games = [_fake_game(1, min_players=1, max_players=4)]
-    monkeypatch.setattr(recommendation_service, "_load_boardgames", lambda: games)
-    monkeypatch.setattr(recommendation_service, "get_embedding_store", lambda: _FakeStore())
+    monkeypatch.setattr(
+        recommendation_service,
+        "_fetch_candidates",
+        lambda play_context, desired_results, db: [],
+    )
+    monkeypatch.setattr(recommendation_service, "get_embedding_index", lambda: _FakeStore())
 
     payload = {
         "liked_games": [1],

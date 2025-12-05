@@ -2,6 +2,9 @@ from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyCookie
 from starlette import status
 
+from boardgames_api.domain.participants.repository import ParticipantRepository
+from boardgames_api.persistence.database import session_scope
+
 # Security scheme so endpoints show lock icon in OpenAPI and set cookie auth.
 session_cookie_scheme = APIKeyCookie(name="session_id", auto_error=False)
 
@@ -23,6 +26,15 @@ def require_session(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Valid session cookie is required.",
         )
+    # Validate participant exists
+    with session_scope() as db_session:
+        repo = ParticipantRepository(db_session)
+        participant = repo.get(participant_id)
+        if participant is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid session cookie is required.",
+            )
     return participant_id
 
 

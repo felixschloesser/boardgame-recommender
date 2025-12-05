@@ -96,9 +96,8 @@ components:
       description: Representation of a study participant identified by a random ID.
       properties:
         participant_id: { type: string, minLength: 1 }
-        study_group: { type: string }
-      required: [participant_id, study_group]
-      unevaluatedProperties: false
+      required: [participant_id]
+      additionalProperties: false
 
     Paginated:
       type: object
@@ -301,25 +300,72 @@ components:
 
 paths:
 
-  /auth/session:
+  /auth/participant:
     post:
       tags: [auth]
-      summary: Create a participant session.
-      description: Creates a new session using a study token and issues a session cookie.
+      summary: Create a participant identity.
+      description: |
+        Issues a new participant id and assigns a study group.
+
+        Frontend usage:
+        - Call once to obtain a `participant_id` and store it client-side (e.g., local storage).
+        - This endpoint does not set a session cookie; it is purely for identity issuance.
+        - Use the returned `participant_id` with POST `/auth/session` to establish an HTTP session.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [study_token]
-              properties:
-                study_token: { type: string, minLength: 1 }
+              additionalProperties: false
             examples:
-              create_session:
-                summary: Create session
+              create_participant:
+                value: {}
+      responses:
+        "201":
+          description: Participant created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Participant"
+              examples:
+                success:
+                  summary: Participant created
+                  value:
+                    participant_id: "participant-48f2d0"
+        "400":
+          description: Invalid request body.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+  /auth/session:
+    post:
+      tags: [auth]
+      summary: Create a participant session.
+      description: |
+        Resumes an existing participant by id and issues a session cookie.
+
+        Frontend usage:
+        - Provide a previously issued `participant_id` (from POST `/auth/participant`).
+        - On success, a `session_id` cookie is set and should be sent with subsequent API calls.
+        - This endpoint does not create new participants; it only validates the id and sets the cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [participant_id]
+              properties:
+                participant_id:
+                  type: string
+                  pattern: "^participant-"
+            examples:
+              create_session_existing:
+                summary: Resume existing participant session
                 value:
-                  study_token: "token-abc123"
+                  participant_id: "participant-existing-id"
       responses:
         "200":
           description: Session created.
@@ -334,22 +380,18 @@ paths:
                 success:
                   summary: Session created
                   value:
-                    participant_id: "p-48f2d0"
-                    study_group: "control"
+                    participant_id: "participant-48f2d0"
         "400":
-          description: Invalid study token.
+          description: Invalid request body.
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
-              examples:
-                invalid_token:
-                  summary: Unknown or expired study token
-                  value:
-                    type: "https://example.com/errors/validation-error"
-                    title: "Invalid study token"
-                    status: 400
-                    detail: "The provided study token is invalid or expired."
-                    code: "INVALID_STUDY_TOKEN"
+              examples: {}
+        "404":
+          description: Participant not found.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
 
     delete:
       tags: [auth]

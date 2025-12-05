@@ -4,10 +4,12 @@ import random
 
 import pytest
 from boardgames_api.domain.games.schemas import BoardGameResponse
-from boardgames_api.domain.recommendations import service as recommendation_service
+from boardgames_api.domain.participants.records import StudyGroup
 from boardgames_api.domain.recommendations.schemas import PlayDuration, RecommendationRequest
 from boardgames_api.domain.recommendations.service import generate_recommendations
 from boardgames_api.utils import embedding as embedding_utils
+
+from boardgames_api.domain.recommendations import service as recommendation_service
 
 
 def _fake_game(
@@ -60,9 +62,14 @@ def test_generate_filters_by_players_and_duration(monkeypatch):
         _fake_game(3, min_players=2, max_players=4, minutes=200),  # too long
     ]
 
-    monkeypatch.setattr(recommendation_service, "_load_boardgames", lambda: games)
-    monkeypatch.setattr(recommendation_service, "get_embedding_store", lambda: _FakeStore())
+    monkeypatch.setattr(
+        recommendation_service,
+        "_fetch_candidates",
+        lambda play_context, desired_results, db: [games[0]],
+    )
+    monkeypatch.setattr(recommendation_service, "get_embedding_index", lambda: _FakeStore())
     monkeypatch.setattr(random, "sample", lambda seq, k: list(seq)[:k])  # deterministic fallback
+    from boardgames_api.persistence.database import session_scope
 
     request = RecommendationRequest.model_validate(
         {
@@ -72,7 +79,13 @@ def test_generate_filters_by_players_and_duration(monkeypatch):
         }
     )
 
-    result = generate_recommendations(request)
+    with session_scope() as session:
+        result = generate_recommendations(
+            request,
+            participant_id="participant-test",
+            study_group=StudyGroup.REFERENCES,
+            db=session,
+        )
     assert len(result.recommendations) == 1
     assert result.recommendations[0].boardgame.id == "1"
 
