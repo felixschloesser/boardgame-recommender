@@ -45,9 +45,11 @@ const recommendations = ref<Recommendation[]>([
 </script>
 
 <template>
-  <nav>
-    <RouterLink to="/"><div>Home</div></RouterLink>
-    <RouterLink to="/wishlist"><div>Wishlist</div></RouterLink>
+  <nav class="navbar">
+    <RouterLink to="/"><img src="../assets/home.svg" alt="Home" class="icon" /></RouterLink
+    ><RouterLink to="/wishlist"
+      ><img src="../assets/wishlist.svg" alt="Wishlist" class="icon"
+    /></RouterLink>
   </nav>
   <div>
     <h1>Recommended for you:</h1>

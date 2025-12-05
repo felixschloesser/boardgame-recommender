@@ -12,10 +12,7 @@ const addToWishList = () => {
   addRecommendationToWishlist(props.recommendation)
 }
 
-const inWishList = () => {
-  // todo check if recommendation is in wishlist
-  return inWishlist(props.recommendation)
-}
+const isInWishlist = () => inWishlist(props.recommendation)
 
 const props = defineProps<Props>()
 </script>
@@ -31,10 +28,8 @@ const props = defineProps<Props>()
       <div :class="`game-title-${props.size}`">
         <h2>{{ props.recommendation.boardgame.title }}</h2>
         <div v-if="props.size === 'large'" class="wishlist-button">
-          <button @click="addToWishList">
-            <img v-if="inWishList()" src="../assets/filled_heart.svg" alt="Add to Wishlist" />
-            <img v-else src="../assets/heart.svg" alt="remove from Wishlist" />
-          </button>
+            <img v-if="isInWishlist()" src="../assets/heart_filled.svg" alt="In Wishlist" />
+            <img v-else @click="addToWishList" src="../assets/heart.svg" alt="Wishlist" />
         </div>
         <div v-else>
           <button>{{ '>' }}</button>

@@ -29,6 +29,12 @@ body {
   cursor: pointer;
 }
 
+.small-icon {
+  width: 25x;
+  height: 25px;
+  display: block;
+}
+
 .navbar {
   display: flex;
   justify-content: space-between;

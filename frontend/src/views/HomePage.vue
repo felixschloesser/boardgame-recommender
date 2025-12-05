@@ -9,11 +9,11 @@ import { getWishlist } from '@/wishlist.mjs'
     <div>
       <div>
         <RouterLink to="/wishlist" v-if="getWishlist().length > 0"
-          ><button class="nav-button">Wishlist</button></RouterLink
+          ><div><button class="nav-button"><img src="../assets/wishlist.svg" alt="wishlist" class="small-icon" /> Wishlist</button></div></RouterLink
         >
       </div>
       <div>
-        <RouterLink to="/explore"><button class="nav-button">Explore</button></RouterLink>
+        <RouterLink to="/explore"><div><button class="nav-button"><img src="../assets/explore.svg" alt="Explore" class="small-icon" /> Explore</button></div></RouterLink>
       </div>
     </div>
   </div>
@@ -22,17 +22,26 @@ import { getWishlist } from '@/wishlist.mjs'
 <style scoped>
 .nav-button {
   background-color: lightblue;
-  border: black 1px solid;
+  border: 1px solid #000;
   border-radius: 8px;
   margin: 10px;
-  padding: 4px;
-  width: 100px;
-  text-align: center;
-  font-size: large;
-  font-weight: bold;
-  color: black;
+  padding: 6px 10px;
+  min-width: 120px;
+  height: 36px;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center; /* vertically center icon + text */
+  justify-content: center;
+  gap: 8px; /* space between icon and text */
+  font-size: 20px;
+  font-weight: 700;
+  color: #000;
   cursor: pointer;
 }
+
+
+a { text-decoration: none; }
+
 
 .center {
   display: flex;

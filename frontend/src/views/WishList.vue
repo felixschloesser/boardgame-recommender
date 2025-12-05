@@ -15,8 +15,8 @@ const recommendations = ref<Recommendation[]>(getWishlist())
 </script>
 
 <template>
-  <nav>
-    <RouterLink to="/"><div>Home</div></RouterLink>
+  <nav class="navbar">
+    <RouterLink to="/"><img src="../assets/home.svg" alt="Home" class="icon" /></RouterLink>
   </nav>
   <h1>Wishlist</h1>
   <div>

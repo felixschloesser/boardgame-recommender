@@ -17,7 +17,7 @@ function clearWishlist() {
 }
 
 function inWishlist(recommendation: Recommendation): boolean {
-  return !!wishlist.find((item) => item.boardgame.id === recommendation.boardgame.id)
+  return wishlist.includes(recommendation)
 }
 
 export { addRecommendationToWishlist, getWishlist, clearWishlist, inWishlist }
