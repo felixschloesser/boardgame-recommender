@@ -1,47 +1,58 @@
 <script lang="ts" setup>
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import RecommendationCard from '@/components/RecommendationCard.vue'
 import type { Recommendation } from '@/recommendation.mjs'
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import * as api from '@/api.mjs'
 
 interface Props {
   id: string
-  explanationStyle: 'analogy' | 'feature'
+  explanationStyle: 'references' | 'features'
 }
 
 const props = defineProps<Props>()
 
-const exampleRecommendation = {
-  boardgame: {
-    id: '1',
-    title: 'Catan',
-    description: 'A game of trading and building.',
-    mechanics: ['Trading', 'Building', 'Dice Rolling'],
-    genre: ['Strategy', 'Family'],
-    themes: ['Economic', 'Negotiation'],
-    min_players: 3,
-    max_players: 4,
-    complexity: 2.5,
-    age_recommendation: 10,
-    num_user_ratings: 5000,
-    avg_user_rating: 4.2,
-    year_published: 1995,
-    playing_time_minutes: 60,
-    image_url:
-      'https://cf.geekdo-images.com/0XODRpReiZBFUffEcqT5-Q__imagepage/img/enC7UTvCAnb6j1Uazvh0OBQjvxw=/fit-in/900x600/filters:no_upscale():strip_icc()/pic9156909.png',
-    bgg_url: 'https://boardgamegeek.com/boardgame/13/catan',
-  },
-  explanation: {
-    references: ['Uno', 'Monopoly'],
-    features: ['Trading', 'Building'],
-  },
+// const exampleRecommendation = {
+//   boardgame: {
+//     id: '1',
+//     title: 'Catan',
+//     description: 'A game of trading and building.',
+//     mechanics: ['Trading', 'Building', 'Dice Rolling'],
+//     genre: ['Strategy', 'Family'],
+//     themes: ['Economic', 'Negotiation'],
+//     min_players: 3,
+//     max_players: 4,
+//     complexity: 2.5,
+//     age_recommendation: 10,
+//     num_user_ratings: 5000,
+//     avg_user_rating: 4.2,
+//     year_published: 1995,
+//     playing_time_minutes: 60,
+//     image_url:
+//       'https://cf.geekdo-images.com/0XODRpReiZBFUffEcqT5-Q__imagepage/img/enC7UTvCAnb6j1Uazvh0OBQjvxw=/fit-in/900x600/filters:no_upscale():strip_icc()/pic9156909.png',
+//     bgg_url: 'https://boardgamegeek.com/boardgame/13/catan',
+//   },
+//   explanation: {
+//     references: ['Uno', 'Monopoly'],
+//     features: ['Trading', 'Building'],
+//   },
+// }
+
+onMounted(() => {
+  fetchRecommendations(props.id)
+})
+
+const recommendations = ref<Recommendation[]>([])
+const router = useRouter()
+
+const fetchRecommendations = async (session_id: string) => {
+  recommendations.value = await api.getSessionRecommendations(session_id)
 }
 
-const recommendations = ref<Recommendation[]>([
-  exampleRecommendation,
-  exampleRecommendation,
-  exampleRecommendation,
-])
+const viewgame = (gameId: string) => {
+  // navigate to game detail page
+  router.push(`/game/${props.id}/${gameId}`)
+}
 </script>
 
 <template>
@@ -57,8 +68,9 @@ const recommendations = ref<Recommendation[]>([
       v-for="rec in recommendations"
       :key="rec.boardgame.id"
       :recommendation="rec"
-      :explanationStyle="props.explanationStyle"
+      :explanationStyle="rec.explanation.type"
       size="large"
+      @viewgame="viewgame"
     />
   </div>
   <div class="floating-footer">

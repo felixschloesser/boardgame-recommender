@@ -1,8 +1,9 @@
 <script lang="ts" setup>
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { onMounted, ref } from 'vue'
 import GameAdder from '@/components/GameAdder.vue'
 import type { Option } from '@/boardGame.mjs'
+import type { Preferences } from '@/api.mts'
 import * as api from '@/api.mjs'
 import type BoardGame from '@/boardGame.mjs'
 
@@ -11,8 +12,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-
+const router = useRouter()
 const games = ref<Option[]>([])
+const earlierPreferences = ref<Preferences | undefined>(undefined)
 
 onMounted(async () => {
   const gameObj: BoardGame[] = await api.getGames()
@@ -21,13 +23,28 @@ onMounted(async () => {
     name: game.title,
   }))
   games.value.push(...gamesToAdd)
+  // fetch earlier preferences if id is provided
+  await fetchEarlierPreferences()
 })
+
+const fetchEarlierPreferences = async () => {
+  if (props.id) {
+    earlierPreferences.value = await api.getSessionPreferences(props.id)
+  }
+}
 
 const addedGames = ref<InstanceType<typeof GameAdder> | null>(null)
 const playerCount = ref(4)
 
-const confirm = () => {
-  if (addedGames.value) console.log(addedGames.value.getGames())
+const confirm = async () => {
+  if (addedGames.value) {
+    // get the selected games from the gameAdder component
+    const selectedGames: Option[] = addedGames.value.getGames()
+    // fetch recommendations & redirect
+    await api
+      .getRecommendations({ liked_games: selectedGames, players: playerCount.value })
+      .then((id) => router.push({ path: `/recommendations/${id}` }))
+  }
 }
 </script>
 
@@ -39,7 +56,7 @@ const confirm = () => {
     /></RouterLink>
   </nav>
   <h1>Enter games you already tried and liked here:</h1>
-  <GameAdder ref="addedGames" :options="games" :id="props.id" />
+  <GameAdder ref="addedGames" :options="games" :preAdded="earlierPreferences?.liked_games" />
   <h1>Enter preferred number of players:</h1>
   <input type="number" min="1" v-model="playerCount" />
   <button @click="confirm">Get Recommendations</button>

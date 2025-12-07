@@ -1,10 +1,23 @@
 'recommendations'
 import type BoardGame from './boardGame.mjs'
 
+interface FeatureExplanation {
+  label: string
+  category: string
+  influence: 'positive' | 'negative' | 'neutral'
+}
+
+interface ReferencesExplanation {
+  bgg_id: number
+  title: string
+  influence: 'positive' | 'negative' | 'neutral'
+}
+
 export interface Recommendation {
   boardgame: BoardGame
   explanation: {
-    references: string[]
-    features: string[]
+    type: 'references' | 'features'
+    references?: ReferencesExplanation[]
+    features?: FeatureExplanation[]
   }
 }

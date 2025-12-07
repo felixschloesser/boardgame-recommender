@@ -1,32 +1,20 @@
 <script lang="ts" setup>
 import DropDownSearch from './DropDownSearch.vue'
 import type { Option } from '../boardGame.mjs'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import * as api from '@/api.mjs'
 import type BoardGame from '../boardGame.mjs'
 
 interface Props {
   options: Option[]
-  id?: string // id can be undefined, get id from session if already existed
+  preAdded?: Option[] //preAdded games, can be empty
 }
 
 const props = defineProps<Props>()
 const selectedGame = ref<Option | undefined>(undefined)
 const options = ref<Option[]>(props.options)
 
-const addedGames = ref<Option[]>([])
-
-onMounted(() => {
-  fetchEarlierPreferences()
-})
-
-const fetchEarlierPreferences = () => {
-  if (props.id) {
-    // Fetch previously added games using the id prop
-    // This is a placeholder for actual fetch logic
-    console.log(`Fetching earlier preferences for id: ${props.id}`)
-  }
-}
+const addedGames = ref<Option[]>(props.preAdded ?? [])
 
 const addGame = () => {
   if (selectedGame.value) {

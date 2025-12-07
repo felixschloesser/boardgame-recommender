@@ -1,11 +1,13 @@
 <script lang="ts" setup>
 import type BoardGame from '@/boardGame.mjs'
 import type { Recommendation } from '@/recommendation.mjs'
-import { ref } from 'vue'
+import * as api from '@/api.mjs'
+import { onMounted, ref } from 'vue'
 
 interface Props {
   id: string // rec_id is required from the route
-  explanationStyle: 'analogy' | 'feature'
+  explanationStyle: 'references' | 'features'
+  gameId: string
 }
 
 const exampleRecommendation = {
@@ -29,8 +31,32 @@ const exampleRecommendation = {
     bgg_url: 'https://boardgamegeek.com/boardgame/161527',
   },
   explanation: {
-    references: ['Uno', 'Monopoly'],
-    features: ['Trading', 'Building'],
+    type: 'features' as 'features' | 'references',
+    references: [
+      { bgg_id: 13, title: 'Catan', influence: 'positive' as 'positive' | 'negative' | 'neutral' },
+      {
+        bgg_id: 1406,
+        title: 'Catan: Seafarers',
+        influence: 'positive' as 'positive' | 'negative' | 'neutral',
+      },
+    ],
+    features: [
+      {
+        label: 'Dice Rolling',
+        category: 'Mechanics',
+        influence: 'positive' as 'positive' | 'negative' | 'neutral',
+      },
+      {
+        label: 'Trading',
+        category: 'Mechanics',
+        influence: 'positive' as 'positive' | 'negative' | 'neutral',
+      },
+      {
+        label: 'Negotiation',
+        category: 'Mechanics',
+        influence: 'positive' as 'positive' | 'negative' | 'neutral',
+      },
+    ],
   },
 }
 
@@ -40,8 +66,18 @@ const props = defineProps<Props>()
 const recommendation = ref<Recommendation | undefined>(exampleRecommendation)
 const game = ref<BoardGame | undefined>(exampleRecommendation.boardgame)
 
+onMounted(async () => {
+  console.log('Fetching recommendation for id:', props.id)
+  const response = await api.getSessionRecommendations(props.id)
+  console.log('Received recommendations:', response)
+  recommendation.value = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
+  if (recommendation.value) {
+    game.value = recommendation.value.boardgame
+  }
+})
+
 const addToWishList = () => {
-  //todo add recommendation to wishlist
+  //todo add game to wishlist
 }
 </script>
 
@@ -64,20 +100,20 @@ const addToWishList = () => {
           </div>
         </div>
         <div class="explanation">
-          <div v-if="props.explanationStyle === 'feature'">
+          <div v-if="props.explanationStyle === 'features'">
             <div
               class="explanation-tab"
               v-for="feature in recommendation?.explanation.features"
-              :key="feature"
+              :key="feature.label"
             >
               {{ feature }}
             </div>
           </div>
-          <div v-else-if="props.explanationStyle === 'analogy'">
+          <div v-else-if="props.explanationStyle === 'references'">
             <div
               class="explanation-tab"
               v-for="reference in recommendation?.explanation.references"
-              :key="reference"
+              :key="reference.bgg_id"
             >
               {{ reference }}
             </div>

@@ -4,13 +4,15 @@ import { addRecommendationToWishlist, inWishlist } from '../wishlist.mjs'
 
 interface Props {
   recommendation: Recommendation
-  explanationStyle: 'analogy' | 'feature'
+  explanationStyle: 'references' | 'features'
   size: 'small' | 'large'
 }
 
 const addToWishList = () => {
   addRecommendationToWishlist(props.recommendation)
 }
+
+defineEmits(['viewgame'])
 
 const isInWishlist = () => inWishlist(props.recommendation)
 
@@ -28,35 +30,35 @@ const props = defineProps<Props>()
       <div :class="`game-title-${props.size}`">
         <h2>{{ props.recommendation.boardgame.title }}</h2>
         <div v-if="props.size === 'large'" class="wishlist-button">
-            <img v-if="isInWishlist()" src="../assets/heart_filled.svg" alt="In Wishlist" />
-            <img v-else @click="addToWishList" src="../assets/heart.svg" alt="Wishlist" />
+          <img v-if="isInWishlist()" src="../assets/filled_heart.svg" alt="In Wishlist" />
+          <img v-else @click="addToWishList" src="../assets/heart.svg" alt="Wishlist" />
         </div>
         <div v-else>
           <button>{{ '>' }}</button>
         </div>
       </div>
       <div class="explanation">
-        <div v-if="props.explanationStyle === 'feature'">
+        <div v-if="props.explanationStyle === 'features'">
           <div
-            class="explanation-tab"
+            :class="`explanation-tab-${feature.influence}`"
             v-for="feature in props.recommendation.explanation.features"
-            :key="feature"
+            :key="feature.label"
           >
-            {{ feature }}
+            {{ feature.label }}
           </div>
         </div>
-        <div v-else-if="props.explanationStyle === 'analogy'">
+        <div v-else-if="props.explanationStyle === 'references'">
           <div
-            class="explanation-tab"
+            :class="`explanation-tab-${reference.influence}`"
             v-for="reference in props.recommendation.explanation.references"
-            :key="reference"
+            :key="reference.bgg_id"
           >
-            {{ reference }}
+            {{ reference.title }}
           </div>
         </div>
       </div>
       <div v-if="props.size === 'large'" class="redirect-arrow">
-        <button>{{ '→' }}</button>
+        <button @click="$emit('viewgame', props.recommendation.boardgame.id)">{{ '→' }}</button>
       </div>
     </div>
   </div>
@@ -106,9 +108,25 @@ const props = defineProps<Props>()
   width: 100%;
 }
 
-.explanation-tab {
+.explanation-tab-neutral {
   background-color: #a2a6d0;
   border: 1px solid #002bd5;
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin: 4px;
+}
+
+.explanation-tab-positive {
+  background-color: #a0d6a0;
+  border: 1px solid #008000;
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin: 4px;
+}
+
+.explanation-tab-negative {
+  background-color: #d0a0a0;
+  border: 1px solid #ff0000;
   border-radius: 4px;
   padding: 3px 6px;
   margin: 4px;

@@ -4,7 +4,7 @@ import type { Recommendation } from '@/recommendation.mjs'
 import { ref } from 'vue'
 
 interface Props {
-  explanationStyle: 'analogy' | 'feature'
+  explanationStyle: 'references' | 'features'
 }
 
 const props = defineProps<Props>()
