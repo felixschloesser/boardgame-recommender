@@ -14,6 +14,7 @@ const props = defineProps<Props>()
 const selectedGame = ref<Option | undefined>(undefined)
 const options = ref<Option[]>(props.options)
 
+const emit = defineEmits(['addGame', 'removeGame'])
 const addedGames = ref<Option[]>(props.preAdded ?? [])
 
 const addGame = () => {
@@ -21,6 +22,7 @@ const addGame = () => {
     // Avoid adding duplicates
     if (!addedGames.value.find((game) => game.id === selectedGame.value?.id)) {
       addedGames.value.push(selectedGame.value)
+      emit('addGame', selectedGame.value)
     }
     selectedGame.value = undefined
   }
@@ -28,6 +30,7 @@ const addGame = () => {
 
 const removeGame = (game: Option) => {
   addedGames.value = addedGames.value.filter((g) => g.id !== game.id)
+  emit('removeGame', game)
 }
 
 const refetchOptions = async (filter: string) => {
@@ -38,22 +41,12 @@ const refetchOptions = async (filter: string) => {
     name: game.title,
   }))
   options.value.push(...newOptions)
-  // Placeholder for fetching updated options if needed
 }
-
-// Expose the getGames method to the parent
-const getGames = () => {
-  return addedGames.value
-}
-
-defineExpose({
-  getGames,
-})
 </script>
 
 <template>
   <div>
-    <div>
+    <div class="inputgames">
       <DropDownSearch
         name="liked-games"
         :options="options"
@@ -62,13 +55,64 @@ defineExpose({
         :maxItems="5"
         @selected="(option) => (selectedGame = option)"
         @filter="(filter) => refetchOptions(filter)"
-      /><button @click="addGame">+</button>
+      /><button class="add-btn" @click="addGame">+</button>
     </div>
     <div class="addedgames">
-      <div v-for="game in addedGames" :key="game.id">
-        <div>{{ game.name }}</div>
-        <button @click="removeGame(game)">x</button>
+      <div class="game" v-for="game in addedGames" :key="game.id">
+        <div class="game-name">{{ game.name }}</div>
+        <button class="remove-btn" @click="removeGame(game)">x</button>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.inputgames {
+  display: flex;
+  align-items: center;
+  width: 250px;
+  gap: 8px;
+  justify-content: center; /* Center align horizontally */
+  margin: 0 auto; /* Center align the container */
+}
+
+.add-btn {
+  color: black;
+  font-weight: bold;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+}
+
+.addedgames {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.game {
+  display: flex;
+  align-self: left;
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.game-name {
+  font-family: 'Arial', sans-serif;
+  font-weight: 400;
+}
+
+.remove-btn {
+  color: black;
+  font-weight: bold;
+  border-radius: 5px;
+  border: none;
+  background-color: lightcoral;
+  cursor: pointer;
+  font-size: 16px;
+}
+</style>
