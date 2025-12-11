@@ -6,6 +6,7 @@ from boardgames_api.domain.games.schemas import BoardGameResponse
 from boardgames_api.domain.recommendations.context import RecommendationContext, ScoredCandidate
 from boardgames_api.domain.recommendations.schemas import RecommendationExplanation, Selection
 
+from sqlalchemy.orm import Session
 
 class Scorer(Protocol):
     def score(self, context: RecommendationContext) -> List[ScoredCandidate]:
@@ -14,7 +15,7 @@ class Scorer(Protocol):
 
 class Explainer(Protocol):
     def explain(
-        self, context: RecommendationContext, scored: List[ScoredCandidate]
+        self, context: RecommendationContext, scored: List[ScoredCandidate], db:Session
     ) -> List[RecommendationExplanation]:
         ...
 
@@ -24,13 +25,13 @@ def run_pipeline(
     context: RecommendationContext,
     scorer: Scorer,
     explainer: Explainer,
+    db:Session,
 ) -> List[Selection]:
     scored = scorer.score(context)
     ranked = sorted(scored, key=lambda item: item.score, reverse=True)
     top = ranked[: context.num_results]
 
-    explanations = explainer.explain(context, top)
-
+    explanations = explainer.explain(context, top, db)
     results: List[Selection] = []
     for item, explanation in zip(top, explanations):
         results.append(

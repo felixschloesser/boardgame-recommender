@@ -135,7 +135,7 @@ def generate_recommendations(
     )
 
     explainer = _select_explainer(study_group)
-    selections = run_pipeline(context=context, scorer=scorer, explainer=explainer)
+    selections = run_pipeline(context=context, scorer=scorer, explainer=explainer,db=db)
 
     rec_id = f"rec-{uuid.uuid4().hex}"
     result = RecommendationResult(
