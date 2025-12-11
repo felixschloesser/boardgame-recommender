@@ -13,11 +13,14 @@ interface Props {
 
 const props = defineProps<Props>()
 const router = useRouter()
+
 const games = ref<Option[]>([])
 const earlierPreferences = ref<Preferences | undefined>(undefined)
 
-const addedGames = ref<Option[]>([])
+const gameAdderRef = ref<InstanceType<typeof GameAdder>>()
 const playerCount = ref(4)
+
+const loading = ref(false)
 
 onMounted(async () => {
   const gameObj: BoardGame[] = await api.getGames()
@@ -33,20 +36,24 @@ onMounted(async () => {
 const fetchEarlierPreferences = async () => {
   if (props.id) {
     earlierPreferences.value = await api.getSessionPreferences(props.id)
-    addedGames.value.splice(0, addedGames.value.length) // Clear current added games
-    addedGames.value.push(...earlierPreferences.value.liked_games)
+    gameAdderRef.value?.addedGames.splice(0, gameAdderRef.value?.addedGames.length) // Clear current added games
+    gameAdderRef.value?.addedGames.push(...earlierPreferences.value.liked_games)
     playerCount.value = earlierPreferences.value.players
   }
 }
 
 const confirm = async () => {
-  if (addedGames.value) {
+  if (gameAdderRef.value?.addedGames && gameAdderRef.value.addedGames.length > 0) {
+    loading.value = true // start loading state
     // get the selected games from the gameAdder component
-    const selectedGames: Option[] = addedGames.value
+    const selectedGames: Option[] = gameAdderRef.value.addedGames
     // fetch recommendations & redirect
     await api
       .getRecommendations({ liked_games: selectedGames, players: playerCount.value })
       .then((id) => router.push({ path: `/recommendations/${id}` }))
+      .finally(() => {
+        loading.value = false // stop loading state
+      })
   }
 }
 </script>
@@ -60,14 +67,8 @@ const confirm = async () => {
   </nav>
   <h1 class="header">Enter games you already tried and liked here:</h1>
   <GameAdder
-    @addGame="(game) => addedGames.push(game)"
-    @removeGame="
-      (game) => {
-        addedGames = addedGames.filter((g) => g.id !== game.id)
-      }
-    "
+    ref="gameAdderRef"
     :options="games"
-    :preAdded="addedGames"
   />
   <h1 class="header">Enter preferred number of players:</h1>
   <div class="players">
@@ -79,9 +80,11 @@ const confirm = async () => {
     />
   </div>
 
-  <button class="btn-confirm" @click="confirm" :disabled="!addedGames || addedGames.length < 1">
+  <button class="btn-confirm" @click="confirm" :disabled="!gameAdderRef?.addedGames || gameAdderRef.addedGames.length < 1">
     Get Recommendations <img src="../assets/continue_arrow.svg" alt="Arrow Right" />
   </button>
+  <div v-if="loading" class="loading-overlay"></div>
+  <div v-if="loading" class="loading-popup">Finding recommendations ...</div>
 </template>
 
 <style scoped>
@@ -97,6 +100,31 @@ const confirm = async () => {
   height: 35px;
   padding: 10px;
 }
+
+.loading-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 20px 40px;
+  border-radius: 8px;
+  font-size: 18px;
+  z-index: 1000;
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4); /* dim background */
+  z-index: 999; /* below popup but above everything else */
+  pointer-events: all; /* block clicks */
+}
+
 
 .players {
   display: flex;

@@ -1,6 +1,7 @@
 <script lang="ts" setup>
+import { ref } from 'vue'
 import type { Recommendation } from '../recommendation.mjs'
-import { addRecommendationToWishlist, inWishlist } from '../wishlist.mjs'
+import { addRecommendationToWishlist, inWishlist, removeRecommendationFromWishlist } from '../wishlist.mjs'
 
 interface Props {
   recommendation: Recommendation
@@ -8,15 +9,22 @@ interface Props {
   size: 'small' | 'large'
 }
 
-const addToWishList = () => {
-  addRecommendationToWishlist(props.recommendation)
+const toggleWishList = () => {
+  if (inWishlist(props.recommendation)) {
+    // Already in wishlist, do nothing for 
+    removeRecommendationFromWishlist(props.recommendation)
+    isInWishlist.value = false
+  } else {
+    isInWishlist.value = true
+    addRecommendationToWishlist(props.recommendation)
+  }
 }
 
 defineEmits(['viewgame'])
-
-const isInWishlist = () => inWishlist(props.recommendation)
-
 const props = defineProps<Props>()
+
+const isInWishlist = ref(inWishlist(props.recommendation))
+
 </script>
 
 <template>
@@ -29,12 +37,14 @@ const props = defineProps<Props>()
     <div>
       <div :class="`game-title-${props.size}`">
         <h2>{{ props.recommendation.boardgame.title }}</h2>
-        <div v-if="props.size === 'large'" class="wishlist-button">
-          <img v-if="isInWishlist()" src="../assets/filled_heart.svg" alt="In Wishlist" />
-          <img v-else @click="addToWishList" src="../assets/heart.svg" alt="Wishlist" />
+        <div  @click="toggleWishList" v-if="props.size === 'large'" class="wishlist-button">
+          <img v-if="isInWishlist" src="../assets/filled_heart.svg" alt="In Wishlist" />
+          <img v-else src="../assets/heart.svg" alt="Wishlist" />
         </div>
         <div v-else>
-          <button>{{ '>' }}</button>
+          <div @click="$emit('viewgame', props.recommendation.boardgame.id)" class="redirect-arrow">
+            <img src="../assets/arrow-right.svg" alt="View Game" />
+          </div>
         </div>
       </div>
       <div class="explanation">
@@ -58,7 +68,9 @@ const props = defineProps<Props>()
         </div>
       </div>
       <div v-if="props.size === 'large'" class="redirect-arrow">
-        <button @click="$emit('viewgame', props.recommendation.boardgame.id)">{{ '→' }}</button>
+        <div @click="$emit('viewgame', props.recommendation.boardgame.id)">
+            <img src="../assets/arrow-right.svg" alt="View Game" />
+        </div>
       </div>
     </div>
   </div>
@@ -75,6 +87,10 @@ const props = defineProps<Props>()
   max-width: 400px;
   margin: 16px auto;
   box-shadow: 2px 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.wishlist-button {
+  cursor: pointer;
 }
 
 .recommendation-card-small {
@@ -141,5 +157,9 @@ const props = defineProps<Props>()
 .game-image img {
   width: 150px;
   height: 150px;
+}
+
+.redirect-arrow {
+  cursor: pointer;
 }
 </style>

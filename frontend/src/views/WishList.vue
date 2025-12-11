@@ -2,17 +2,21 @@
 import RecommendationCard from '@/components/RecommendationCard.vue'
 import type { Recommendation } from '@/recommendation.mjs'
 import { ref } from 'vue'
-
-interface Props {
-  explanationStyle: 'references' | 'features'
-}
-
-const props = defineProps<Props>()
-
+//import { RouterLink, useRouter } from 'vue-router'
 import { getWishlist } from '@/wishlist.mjs'
 
+//const router = useRouter()
+
+const viewgame = (gameId: string) => {
+  // navigate to game detail page
+  //router.push(`/game/${props.id}/${gameId}`)
+  console.log('View game:', gameId)
+}
+
 const recommendations = ref<Recommendation[]>(getWishlist())
+console.log('Wishlist recommendations:', recommendations.value)
 </script>
+
 
 <template>
   <nav class="navbar">
@@ -29,7 +33,8 @@ const recommendations = ref<Recommendation[]>(getWishlist())
         :key="rec.boardgame.id"
         :recommendation="rec"
         size="small"
-        :explanation-style="props.explanationStyle"
+        :explanation-style="rec.explanation.type"
+        @viewgame="viewgame"
       ></RecommendationCard>
     </div>
   </div>

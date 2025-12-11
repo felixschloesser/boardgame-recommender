@@ -55,6 +55,7 @@ body {
   width: 25x;
   height: 25px;
   display: block;
+  cursor : pointer;
 }
 
 .navbar {

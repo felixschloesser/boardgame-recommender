@@ -10,7 +10,7 @@ const routes = [
   { path: '/wishlist', name: 'wishlist', component: WishList },
   { path: '/explore/:id?', name: 'explore', component: ExplorePage, props: true },
   {
-    path: '/game/:id/:gameid',
+    path: '/game/:id/:gameId',
     name: 'game',
     component: GameDetail,
     props: true,

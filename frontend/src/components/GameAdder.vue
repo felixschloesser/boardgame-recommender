@@ -7,7 +7,6 @@ import type BoardGame from '../boardGame.mjs'
 
 interface Props {
   options: Option[]
-  preAdded?: Option[] //preAdded games, can be empty
 }
 
 const props = defineProps<Props>()
@@ -15,13 +14,17 @@ const selectedGame = ref<Option | undefined>(undefined)
 const options = ref<Option[]>(props.options)
 
 const emit = defineEmits(['addGame', 'removeGame'])
-const addedGames = ref<Option[]>(props.preAdded ?? [])
+const searchBar = ref<InstanceType<typeof DropDownSearch>>()
+const addedGames = ref<Option[]>([])
 
 const addGame = () => {
   if (selectedGame.value) {
     // Avoid adding duplicates
     if (!addedGames.value.find((game) => game.id === selectedGame.value?.id)) {
       addedGames.value.push(selectedGame.value)
+      if (searchBar.value) {
+        searchBar.value.searchFilter = '' // Clear search input
+      }
       emit('addGame', selectedGame.value)
     }
     selectedGame.value = undefined
@@ -42,12 +45,18 @@ const refetchOptions = async (filter: string) => {
   }))
   options.value.push(...newOptions)
 }
+
+defineExpose({
+  addedGames,
+})
+
 </script>
 
 <template>
   <div>
     <div class="inputgames">
       <DropDownSearch
+        ref="searchBar"
         name="liked-games"
         :options="options"
         placeholder="Search for a game..."

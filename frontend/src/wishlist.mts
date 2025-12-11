@@ -8,6 +8,10 @@ function addRecommendationToWishlist(recommendation: Recommendation) {
   }
 }
 
+function removeRecommendationFromWishlist(recommendation: Recommendation) {
+  wishlist = wishlist.filter((item) => item.boardgame.id !== recommendation.boardgame.id)
+}
+
 function getWishlist(): Recommendation[] {
   return wishlist
 }
@@ -20,4 +24,10 @@ function inWishlist(recommendation: Recommendation): boolean {
   return wishlist.includes(recommendation)
 }
 
-export { addRecommendationToWishlist, getWishlist, clearWishlist, inWishlist }
+export {
+  addRecommendationToWishlist,
+  getWishlist,
+  clearWishlist,
+  inWishlist,
+  removeRecommendationFromWishlist,
+}

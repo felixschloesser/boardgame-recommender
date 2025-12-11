@@ -3,6 +3,7 @@ import type BoardGame from '@/boardGame.mjs'
 import type { Recommendation } from '@/recommendation.mjs'
 import * as api from '@/api.mjs'
 import { onMounted, ref } from 'vue'
+import { addRecommendationToWishlist, inWishlist, removeRecommendationFromWishlist } from '@/wishlist.mts'
 
 interface Props {
   id: string // rec_id is required from the route
@@ -10,75 +11,34 @@ interface Props {
   gameId: string
 }
 
-const exampleRecommendation = {
-  boardgame: {
-    id: '161527',
-    title: 'Catan: Ancient Egypt',
-    description: '',
-    mechanics: ['dice rolling negotiation network and route building trading'],
-    genre: ['family'],
-    themes: ['civilization'],
-    min_players: 3,
-    max_players: 4,
-    complexity: 0.7109773918109924,
-    age_recommendation: 0,
-    num_user_ratings: 0,
-    avg_user_rating: 7.26921,
-    year_published: 0,
-    playing_time_minutes: 75,
-    image_url:
-      'https://cf.geekdo-images.com/0XODRpReiZBFUffEcqT5-Q__imagepage/img/enC7UTvCAnb6j1Uazvh0OBQjvxw=/fit-in/900x600/filters:no_upscale():strip_icc()/pic9156909.png',
-    bgg_url: 'https://boardgamegeek.com/boardgame/161527',
-  },
-  explanation: {
-    type: 'features' as 'features' | 'references',
-    references: [
-      { bgg_id: 13, title: 'Catan', influence: 'positive' as 'positive' | 'negative' | 'neutral' },
-      {
-        bgg_id: 1406,
-        title: 'Catan: Seafarers',
-        influence: 'positive' as 'positive' | 'negative' | 'neutral',
-      },
-    ],
-    features: [
-      {
-        label: 'Dice Rolling',
-        category: 'Mechanics',
-        influence: 'positive' as 'positive' | 'negative' | 'neutral',
-      },
-      {
-        label: 'Trading',
-        category: 'Mechanics',
-        influence: 'positive' as 'positive' | 'negative' | 'neutral',
-      },
-      {
-        label: 'Negotiation',
-        category: 'Mechanics',
-        influence: 'positive' as 'positive' | 'negative' | 'neutral',
-      },
-    ],
-  },
-}
-
 const props = defineProps<Props>()
 
 //todo fetch recommendation from backend using props.id
-const recommendation = ref<Recommendation | undefined>(exampleRecommendation)
-const game = ref<BoardGame | undefined>(exampleRecommendation.boardgame)
+const recommendation = ref<Recommendation | undefined>(undefined)
+const game = ref<BoardGame | undefined>(undefined)
+const isInWishlist = ref(false)
+
+const toggleWishList = () => {
+  if (inWishlist(recommendation.value!)) {
+    // Already in wishlist, do nothing for 
+    removeRecommendationFromWishlist(recommendation.value!)
+    isInWishlist.value = false
+    return
+  } else {
+    isInWishlist.value = true
+    addRecommendationToWishlist(recommendation.value!)
+  }
+}
 
 onMounted(async () => {
-  console.log('Fetching recommendation for id:', props.id)
   const response = await api.getSessionRecommendations(props.id)
-  console.log('Received recommendations:', response)
   recommendation.value = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
   if (recommendation.value) {
     game.value = recommendation.value.boardgame
+    isInWishlist.value = inWishlist(recommendation.value)
   }
 })
 
-const addToWishList = () => {
-  //todo add game to wishlist
-}
 </script>
 
 <template>
@@ -95,8 +55,9 @@ const addToWishList = () => {
       <div>
         <div class="game-title">
           <h2>{{ game?.title }}</h2>
-          <div class="wishlist-button">
-            <button @click="addToWishList">{{ '<3' }}</button>
+          <div @click="toggleWishList" class="wishlist-button">
+            <img v-if="isInWishlist" src="../assets/filled_heart.svg" alt="In Wishlist" />
+            <img v-else src="../assets/heart.svg" alt="Wishlist" />
           </div>
         </div>
         <div class="explanation">

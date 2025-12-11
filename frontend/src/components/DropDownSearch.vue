@@ -22,35 +22,28 @@ const optionsShown = ref(false)
 const emit = defineEmits(['selected', 'filter'])
 
 const filteredOptions = computed(() => {
-  const filtered = []
-  const regOption = new RegExp(searchFilter.value, 'ig')
-  for (const option of options.value) {
-    if (searchFilter.value.length < 1 || option.name.match(regOption)) {
-      if (filtered.length < props.maxItems) {
-        filtered.push(option)
-      }
-    }
-  }
-  if (!searchFilter.value) {
-    return options.value.slice(0, props.maxItems)
-  }
+  const filter = searchFilter.value.toLowerCase()
+
   return options.value
-    .filter(
-      (option) =>
-        (option.name && option.name.toLowerCase().includes(searchFilter.value.toLowerCase())) ||
-        (option.id && option.id.toLowerCase().includes(searchFilter.value.toLowerCase())),
+    .filter(option =>
+      !filter ||
+      (option.name?.toLowerCase().includes(filter)) ||
+      (option.id?.toLowerCase().includes(filter))
     )
     .slice(0, props.maxItems)
 })
+
 
 watch(searchFilter, () => {
   if (filteredOptions.value.length === 0) {
     selected.value = undefined
   } else {
     selected.value = filteredOptions.value[0]
-    emit('filter', searchFilter.value)
   }
+    emit('filter', searchFilter.value)   // always emit on input change
+
 })
+
 
 const showOptions = () => {
   optionsShown.value = true
@@ -80,6 +73,11 @@ const keyMonitor = (event: KeyboardEvent) => {
     selectOption(filteredOptions.value[0])
   }
 }
+
+defineExpose({
+  searchFilter,
+})
+
 </script>
 
 <template>
@@ -88,6 +86,9 @@ const keyMonitor = (event: KeyboardEvent) => {
     <input
       class="dropdown-input"
       :name="name"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
       @focus="showOptions()"
       @blur="exit()"
       @keyup="keyMonitor"
