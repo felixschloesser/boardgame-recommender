@@ -1,5 +1,6 @@
+
 <script lang="ts" setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Recommendation } from '../recommendation.mjs'
 import { addRecommendationToWishlist, inWishlist, removeRecommendationFromWishlist } from '../wishlist.mjs'
 
@@ -9,9 +10,13 @@ interface Props {
   size: 'small' | 'large'
 }
 
+const emit = defineEmits(['viewgame'])
+const props = defineProps<Props>()
+
+const isInWishlist = ref(inWishlist(props.recommendation))
+
 const toggleWishList = () => {
   if (inWishlist(props.recommendation)) {
-    // Already in wishlist, do nothing for 
     removeRecommendationFromWishlist(props.recommendation)
     isInWishlist.value = false
   } else {
@@ -20,57 +25,106 @@ const toggleWishList = () => {
   }
 }
 
-defineEmits(['viewgame'])
-const props = defineProps<Props>()
+// Normalize influence to 'positive' | 'neutral' | 'negative'
+const normInfluence = (val: unknown): 'positive' | 'neutral' | 'negative' => {
+  if (typeof val === 'string') {
+    const v = val.toLowerCase()
+    if (v.includes('pos') || v === '+') return 'positive'
+    if (v.includes('neg') || v === '-') return 'negative'
+    return 'neutral'
+  }
+  if (typeof val === 'number') {
+    if (val > 0) return 'positive'
+    if (val < 0) return 'negative'
+    return 'neutral'
+  }
+  return 'neutral'
+}
 
-const isInWishlist = ref(inWishlist(props.recommendation))
+// Collapse long explanations so cards don't become too tall
+const expanded = ref(false)
+const maxChips = computed(() => (props.size === 'large' ? 6 : 4))
 
+const featureChips = computed(() => {
+  const items = props.recommendation.explanation?.features || []
+  return expanded.value ? items : items.slice(0, maxChips.value)
+})
+
+const referenceChips = computed(() => {
+  const items = props.recommendation.explanation?.references || []
+  return expanded.value ? items : items.slice(0, maxChips.value)
+})
+
+const hasMoreFeatures = computed(
+  () => (props.recommendation.explanation?.features?.length || 0) > maxChips.value,
+)
+const hasMoreReferences = computed(
+  () => (props.recommendation.explanation?.references?.length || 0) > maxChips.value,
+)
 </script>
 
 <template>
-  <div :class="`recommendation-card-${props.size}`">
-    <div style="padding: 8px">
-      <div class="game-image">
+  <div :class="`recommendation-card-${props.size} card`">
+    <div class="media">
+      <div class="game-image thumb">
         <img :src="props.recommendation.boardgame.image_url" alt="Game image" />
       </div>
     </div>
-    <div>
+    <div class="content">
       <div :class="`game-title-${props.size}`">
-        <h2>{{ props.recommendation.boardgame.title }}</h2>
-        <div  @click="toggleWishList" v-if="props.size === 'large'" class="wishlist-button">
-          <img v-if="isInWishlist" src="../assets/filled_heart.svg" alt="In Wishlist" />
-          <img v-else src="../assets/heart.svg" alt="Wishlist" />
-        </div>
-        <div v-else>
-          <div @click="$emit('viewgame', props.recommendation.boardgame.id)" class="redirect-arrow">
-            <img src="../assets/arrow-right.svg" alt="View Game" />
-          </div>
-        </div>
+        <h2 class="title">{{ props.recommendation.boardgame.title }}</h2>
+        <button
+          v-if="props.size === 'large'"
+          @click="toggleWishList"
+          class="wishlist-button btn-outline"
+          :aria-pressed="isInWishlist"
+          :title="isInWishlist ? 'Remove from wishlist' : 'Add to wishlist'"
+        >
+          <Icon
+            v-if="isInWishlist"
+            icon="material-symbols:favorite-rounded"
+            style="color: var(--color-danger)"
+            width="22"
+            height="22"
+          />
+          <Icon v-else icon="material-symbols:favorite-outline-rounded" width="22" height="22" />
+        </button>
       </div>
-      <div class="explanation">
-        <div v-if="props.explanationStyle === 'features'">
+
+      <div class="explanations">
+        <template v-if="props.explanationStyle === 'features'">
           <div
-            :class="`explanation-tab-${feature.influence}`"
-            v-for="feature in props.recommendation.explanation.features"
+            v-for="feature in featureChips"
             :key="feature.label"
+            :class="`explanation-chip explanation-${normInfluence(feature.influence)} chip`"
           >
             {{ feature.label }}
           </div>
-        </div>
-        <div v-else-if="props.explanationStyle === 'references'">
+        </template>
+        <template v-else-if="props.explanationStyle === 'references'">
           <div
-            :class="`explanation-tab-${reference.influence}`"
-            v-for="reference in props.recommendation.explanation.references"
+            v-for="reference in referenceChips"
             :key="reference.bgg_id"
+            :class="`explanation-chip explanation-${normInfluence(reference.influence)} chip`"
           >
             {{ reference.title }}
           </div>
-        </div>
+        </template>
+        <button
+          v-if="(props.explanationStyle === 'features' && hasMoreFeatures) || (props.explanationStyle === 'references' && hasMoreReferences)"
+          class="toggle-explanations"
+          type="button"
+          @click="expanded = !expanded"
+        >
+          {{ expanded ? 'Show less' : 'Show more' }}
+        </button>
       </div>
-      <div v-if="props.size === 'large'" class="redirect-arrow">
-        <div @click="$emit('viewgame', props.recommendation.boardgame.id)">
-            <img src="../assets/arrow-right.svg" alt="View Game" />
-        </div>
+
+      <div class="actions">
+        <button class="btn-primary more-btn" @click="emit('viewgame', props.recommendation.boardgame.id)">
+          <Icon icon="material-symbols:arrow-forward-rounded" width="20" height="20" />
+          More information
+        </button>
       </div>
     </div>
   </div>
@@ -78,88 +132,94 @@ const isInWishlist = ref(inWishlist(props.recommendation))
 
 <style scoped>
 .recommendation-card-large {
-  border: 2px solid #000;
-  border-radius: 8px;
   display: flex;
   flex-direction: row;
-  width: 350px;
-  padding: 16px;
-  max-width: 400px;
-  margin: 16px auto;
-  box-shadow: 2px 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-.wishlist-button {
-  cursor: pointer;
+  width: 100%;
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+  gap: var(--space-4);
+  box-sizing: border-box;
 }
 
 .recommendation-card-small {
-  border: 2px solid #000;
-  border-radius: 8px;
   display: flex;
   flex-direction: column;
-  width: 150px;
-  padding: 16px;
-  margin: 16px auto;
-  box-shadow: 2px 2px 12px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  padding: var(--space-3);
+  margin: var(--space-3) 0;
+  gap: var(--space-3);
+  box-sizing: border-box;
 }
 
-.game-title-large {
-  display: flex;
-  justify-content: space-between;
-  width: 180px;
+.wishlist-button,
+.go-btn {
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
 }
 
+.game-title-large,
 .game-title-small {
   display: flex;
   justify-content: space-between;
-  width: 150px;
   align-items: center;
+  gap: var(--space-2);
 }
 
-.redirect-arrow {
-  display: flex;
-  justify-content: flex-end;
-  width: 100%;
+.title {
+  font-size: var(--text-lg);
+  margin: 0;
 }
 
-.explanation-tab-neutral {
-  background-color: #a2a6d0;
-  border: 1px solid #002bd5;
-  border-radius: 4px;
-  padding: 3px 6px;
-  margin: 4px;
-}
-
-.explanation-tab-positive {
-  background-color: #a0d6a0;
-  border: 1px solid #008000;
-  border-radius: 4px;
-  padding: 3px 6px;
-  margin: 4px;
-}
-
-.explanation-tab-negative {
-  background-color: #d0a0a0;
-  border: 1px solid #ff0000;
-  border-radius: 4px;
-  padding: 3px 6px;
-  margin: 4px;
-}
-
-.explanation {
+.explanations {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
 }
 
-.game-image img {
-  width: 150px;
-  height: 150px;
+.explanation-chip { margin: 4px; }
+
+.media { flex: 0 0 auto; }
+.game-image {
+  width: 148px;
+  height: 148px;
 }
 
-.redirect-arrow {
-  cursor: pointer;
+.content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+}
+
+/* Responsive adjustments for narrow screens */
+@media (max-width: 520px) {
+  .recommendation-card-large {
+    flex-direction: column;
+    padding: var(--space-3);
+    gap: var(--space-3);
+  }
+  .media { width: 100%; }
+  .game-image { width: 100%; height: 180px; }
+  .actions { justify-content: flex-end; }
 }
 </style>

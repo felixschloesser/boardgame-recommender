@@ -25,42 +25,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main>
+  <main class="container">
     <RouterView v-slot="{ Component }">
       <component :is="Component" explanationStyle="analogy" />
     </RouterView>
   </main>
+  
 </template>
 
-<!-- Global styles --->
+<!-- Keep this file free of app-specific global CSS; theme is in styles/theme.css -->
 <style>
-body {
-  font-family: Arial, sans-serif;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100vh;
-}
-
-.icon {
-  width: 35px;
-  height: 35px;
-  padding: 10px;
-  cursor: pointer;
-}
-
-.small-icon {
-  width: 25x;
-  height: 25px;
-  display: block;
-  cursor : pointer;
-}
-
-.navbar {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-}
 </style>

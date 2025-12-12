@@ -22,6 +22,19 @@ const playerCount = ref(4)
 
 const loading = ref(false)
 
+const clampPlayers = () => {
+  if (!playerCount.value || playerCount.value < 1) playerCount.value = 1
+}
+
+// Select the entire number when interacting with the players input so typing replaces it
+const selectAll = (e: Event) => {
+  const el = e.target as HTMLInputElement | null
+  if (el && typeof el.select === 'function') {
+    // Delay selection very slightly to ensure it applies after focus/click
+    requestAnimationFrame(() => el.select())
+  }
+}
+
 onMounted(async () => {
   const gameObj: BoardGame[] = await api.getGames()
   const gamesToAdd = gameObj.map((game) => ({
@@ -60,111 +73,144 @@ const confirm = async () => {
 
 <template>
   <nav class="navbar">
-    <RouterLink to="/"><img src="../assets/home.svg" alt="Home" class="icon" /></RouterLink
-    ><RouterLink to="/wishlist"
-      ><img src="../assets/wishlist.svg" alt="Wishlist" class="icon"
+    <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink>
+    <RouterLink to="/wishlist"
+      ><Icon class="icon-btn" icon="material-symbols:favorite-rounded"
     /></RouterLink>
   </nav>
   <h1 class="header">Enter games you already tried and liked here:</h1>
-  <GameAdder
-    ref="gameAdderRef"
-    :options="games"
-  />
+  <GameAdder ref="gameAdderRef" :options="games" />
   <h1 class="header">Enter preferred number of players:</h1>
-  <div class="players">
-    <img src="../assets/players.svg" alt="Players" class="icon-players" /><input
-      class="input-players"
-      type="number"
-      min="1"
-      v-model="playerCount"
-    />
+  <div class="players-control card">
+    <button
+      class="players-btn btn-outline"
+      aria-label="Decrease players"
+      @click="playerCount = Math.max(1, playerCount - 1)"
+    >
+      <Icon icon="mdi:chevron-left" width="28" height="28" />
+    </button>
+    <div class="players-display">
+      <Icon icon="mdi:account-group" class="icon-players" />
+      <input
+        class="players-input"
+        type="number"
+        inputmode="numeric"
+        min="1"
+        v-model.number="playerCount"
+        @focus="selectAll"
+        @click="selectAll"
+        @mouseup.prevent
+        @blur="clampPlayers"
+        aria-label="Number of players"
+      />
+    </div>
+    <button
+      class="players-btn btn-outline"
+      aria-label="Increase players"
+      @click="playerCount = playerCount + 1"
+    >
+      <Icon icon="mdi:chevron-right" width="28" height="28" />
+    </button>
   </div>
 
-  <button class="btn-confirm" @click="confirm" :disabled="!gameAdderRef?.addedGames || gameAdderRef.addedGames.length < 1">
-    Get Recommendations <img src="../assets/continue_arrow.svg" alt="Arrow Right" />
+  <button
+    class="btn-confirm btn-primary"
+    @click="confirm"
+    :disabled="loading || !gameAdderRef?.addedGames || gameAdderRef.addedGames.length < 1"
+    :aria-busy="loading ? 'true' : 'false'"
+  >
+    <template v-if="loading">
+      <Icon class="spin" icon="material-symbols:progress-activity" width="20" height="20" />
+      Finding recommendations…
+    </template>
+    <template v-else>
+      Get Recommendations <Icon icon="material-symbols:arrow-forward-rounded" />
+    </template>
   </button>
-  <div v-if="loading" class="loading-overlay"></div>
-  <div v-if="loading" class="loading-popup">Finding recommendations ...</div>
 </template>
 
 <style scoped>
 .header {
-  font-size: 24px;
-  margin: 16px 0;
+  font-size: var(--text-xl);
+  margin: var(--space-4) 0;
   text-align: center;
 }
 
 .icon-players {
   cursor: auto;
-  width: 35px;
-  height: 35px;
-  padding: 10px;
+  width: 28px;
+  height: 28px;
+  color: var(--color-text);
 }
 
-.loading-popup {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background-color: rgba(0, 0, 0, 0.8);
-  color: white;
-  padding: 20px 40px;
-  border-radius: 8px;
-  font-size: 18px;
-  z-index: 1000;
-}
+/* removed modal loading styles; loading now indicated on button */
 
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.4); /* dim background */
-  z-index: 999; /* below popup but above everything else */
-  pointer-events: all; /* block clicks */
-}
-
-
-.players {
+.players-control {
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto var(--space-4);
 }
 
-.input-players {
-  border-radius: 8px;
-  border: black 2px solid;
-  padding: 8px;
-  font-size: 16px;
-  width: 60px;
+.players-btn {
+  border-radius: var(--radius-md);
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.players-display {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.players-input {
+  width: 56px;
   text-align: center;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text);
+  -moz-appearance: textfield;
+}
+
+/* Hide number input spinners in Chrome/Safari/Edge/Opera */
+.players-input::-webkit-outer-spin-button,
+.players-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .btn-confirm {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto;
-  padding: 8px 16px;
-  font-size: 16px;
-  background-color: #4caf50;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
+  width: fit-content;
+  margin: var(--space-3) auto;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-md);
+  gap: var(--space-2);
 }
+
+/* Spinner styles moved to global theme.css (.spin utility) */
 
 .btn-confirm:disabled {
-  background-color: gray;
-  color: white;
-  cursor: not-allowed;
+  /* styles handled by .btn-primary:disabled */
 }
 
-.btn-confirm img {
-  margin-left: 8px; /* Add some space between text and icon */
-  filter: invert(1); /* Invert icon color to white */
+.btn-confirm :deep(svg) {
+  margin-left: var(--space-2);
 }
 </style>

@@ -1,42 +1,73 @@
 <script lang="ts" setup>
 import { RouterLink } from 'vue-router'
+import { computed } from 'vue'
 import { getWishlist } from '@/wishlist.mjs'
+
+const hasWishlist = computed(() => getWishlist().length > 0)
 </script>
 
 <template>
-  <div class="center">
-    <h1>Boardgame Recommender</h1>
-    <div>
-      <div>
-        <RouterLink to="/wishlist" v-if="getWishlist().length > 0"
-          ><div><button class="nav-button"><img src="../assets/wishlist.svg" alt="wishlist" class="small-icon" /> Wishlist</button></div></RouterLink
-        >
+  <div class="center container">
+    <h1 class="title">Boardgame Recommender</h1>
+    <div class="actions">
+      <div class="action">
+        <RouterLink v-if="hasWishlist" to="/wishlist">
+          <button class="nav-button btn-primary">
+            <Icon icon="material-symbols:favorite-rounded" width="20" height="20" />
+            Wishlist
+          </button>
+        </RouterLink>
+        <button v-else class="nav-button btn-primary" :disabled="true">
+          <Icon icon="material-symbols:favorite-outline-rounded" width="20" height="20" />
+          Wishlist
+        </button>
       </div>
-      <div>
-        <RouterLink to="/explore"><div><button class="nav-button"><img src="../assets/explore.svg" alt="Explore" class="small-icon" /> Explore</button></div></RouterLink>
+      <div class="action">
+        <RouterLink to="/explore">
+          <button class="nav-button btn-primary">
+            <Icon icon="material-symbols:explore-rounded" width="20" height="20" />
+            Explore
+          </button>
+        </RouterLink>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.title {
+  font-size: var(--text-2xl);
+  margin: var(--space-5) 0 var(--space-6);
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
 .nav-button {
-  background-color: lightblue;
-  border: 1px solid #000;
-  border-radius: 8px;
-  margin: 10px;
-  padding: 6px 10px;
-  min-width: 120px;
-  height: 36px;
+  margin: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  min-width: 140px;
+  height: 40px;
   display: inline-flex;
   flex-direction: row;
-  align-items: center; /* vertically center icon + text */
+  align-items: center;
   justify-content: center;
-  gap: 8px; /* space between icon and text */
-  font-size: 20px;
-  font-weight: 700;
-  color: #000;
-  cursor: pointer;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .actions {
+    flex-direction: row;
+  }
 }
 
 
@@ -47,6 +78,6 @@ a { text-decoration: none; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100vh;
+  min-height: 100vh;
 }
 </style>

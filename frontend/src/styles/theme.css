@@ -1,0 +1,178 @@
+/* Global Theme Variables and Resets */
+:root {
+  /* Color Palette - Light Theme */
+  --color-bg: #f8fafc;            /* slate-50 */
+  --color-surface: #ffffff;        /* white */
+  --color-surface-2: #f1f5f9;      /* slate-100 */
+  --color-primary: #2563eb;        /* blue-600 */
+  --color-primary-contrast: #ffffff; /* text on primary */
+  --color-accent: #06b6d4;         /* cyan-500 */
+  --color-success: #16a34a;        /* green-600 */
+  --color-warning: #f59e0b;        /* amber-500 */
+  --color-danger: #dc2626;         /* red-600 */
+  --color-border: #e2e8f0;         /* slate-200 */
+  --color-text: #0f172a;           /* slate-900 */
+  --color-text-muted: #475569;     /* slate-600 */
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Shadows (lighter for light theme) */
+  --shadow-1: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-2: 0 6px 16px rgba(0,0,0,0.12);
+
+  /* Typography */
+  --font-base: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 26px;
+
+  /* Layout */
+  --container-max: 680px; /* mobile-first, expands on desktop */
+
+  /* Breakpoints */
+  --bp-sm: 480px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+}
+
+/* Global element styles */
+html, body, #app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-base);
+}
+
+/* Utilities */
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-2);
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+}
+
+.chip {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  margin: 4px;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:disabled {
+  background: #bfdbfe; /* blue-200 */
+  color: #64748b;      /* slate-500 */
+  cursor: not-allowed;
+}
+
+/* Secondary button (outlined, subtle) */
+.btn-outline {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+}
+
+/* Media thumbnail helper: apply consistent border/radius and cover behavior */
+.thumb {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Explanation chip sentiment variants */
+.explanation-neutral { background-color: var(--color-surface-2); border-color: var(--color-border); }
+.explanation-positive { background-color: rgba(34, 197, 94, 0.18); border-color: var(--color-success); }
+.explanation-negative { background-color: rgba(239, 68, 68, 0.18); border-color: var(--color-danger); }
+
+/* Toggle link/button for show more/less */
+.toggle-explanations {
+  background: transparent;
+  border: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+  margin: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+/* Global spinner utility */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 1s linear infinite; will-change: transform; }
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}
+
+/* Responsive helpers */
+@media (min-width: 768px) {
+  :root {
+    --container-max: 960px;
+  }
+}

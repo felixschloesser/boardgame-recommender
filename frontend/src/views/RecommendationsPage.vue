@@ -57,51 +57,50 @@ const viewgame = (gameId: string) => {
 
 <template>
   <nav class="navbar">
-    <RouterLink to="/"><img src="../assets/home.svg" alt="Home" class="icon" /></RouterLink
+    <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink
     ><RouterLink to="/wishlist"
-      ><img src="../assets/wishlist.svg" alt="Wishlist" class="icon"
-    /></RouterLink>
+      ><Icon class="icon-btn" icon="material-symbols:favorite-rounded" />
+    </RouterLink>
   </nav>
-  <div>
-    <h1>Recommended for you:</h1>
-    <RecommendationCard
-      v-for="rec in recommendations"
-      :key="rec.boardgame.id"
-      :recommendation="rec"
-      :explanationStyle="rec.explanation.type"
-      size="large"
-      @viewgame="viewgame"
-    />
+  <div class="container page">
+    <h1 class="title">Recommended for you</h1>
+    <div class="recs-grid">
+      <RecommendationCard
+        v-for="rec in recommendations"
+        :key="rec.boardgame.id"
+        :recommendation="rec"
+        :explanationStyle="rec.explanation.type"
+        size="large"
+        @viewgame="viewgame"
+      />
+    </div>
   </div>
   <div class="floating-footer">
-    <button class="floating-button">
-      <RouterLink :to="'/explore/' + props.id">Change Preferences</RouterLink>
-    </button>
+    <RouterLink :to="'/explore/' + props.id" class="floating-button btn-primary">Change Preferences</RouterLink>
   </div>
 </template>
 
 <style scoped>
 .floating-footer {
   position: fixed;
-  background-color: white;
-  border-top: black solid 1px;
+  background-color: var(--color-surface);
+  border-top: 1px solid var(--color-border);
   bottom: 0;
   left: 0;
   width: 100%;
+  box-shadow: var(--shadow-1);
 }
 
 .floating-button {
-  border: black 1px solid;
-  border-radius: 8px;
-  margin: 10px auto;
-  padding: 20px auto;
-  width: 250px;
-  text-align: center;
-  font-size: large;
-  font-weight: bold;
-  color: black;
-  cursor: pointer;
   display: block;
-  height: 30px;
+  width: fit-content;
+  margin: var(--space-3) auto;
+  text-align: center;
+  font-size: var(--text-md);
+  text-decoration: none;
 }
+
+.page { padding-bottom: 72px; }
+.title { font-size: var(--text-xl); margin: var(--space-3) var(--space-2); font-weight: 700; }
+.recs-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
 </style>
