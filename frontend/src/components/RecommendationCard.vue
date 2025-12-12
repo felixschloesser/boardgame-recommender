@@ -1,10 +1,14 @@
-
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
 import type { Recommendation } from '../recommendation.mjs'
-import { addRecommendationToWishlist, inWishlist, removeRecommendationFromWishlist } from '../wishlist.mjs'
+import {
+  addRecommendationToWishlist,
+  inWishlist,
+  removeRecommendationFromWishlist,
+} from '../wishlist.mjs'
 
 interface Props {
+  recId: string
   recommendation: Recommendation
   explanationStyle: 'references' | 'features'
   size: 'small' | 'large'
@@ -13,15 +17,15 @@ interface Props {
 const emit = defineEmits(['viewgame'])
 const props = defineProps<Props>()
 
-const isInWishlist = ref(inWishlist(props.recommendation))
+const isInWishlist = ref(inWishlist(props.recId, props.recommendation))
 
 const toggleWishList = () => {
-  if (inWishlist(props.recommendation)) {
-    removeRecommendationFromWishlist(props.recommendation)
+  if (inWishlist(props.recId, props.recommendation)) {
+    removeRecommendationFromWishlist(props.recId, props.recommendation)
     isInWishlist.value = false
   } else {
     isInWishlist.value = true
-    addRecommendationToWishlist(props.recommendation)
+    addRecommendationToWishlist(props.recId, props.recommendation)
   }
 }
 
@@ -111,7 +115,10 @@ const hasMoreReferences = computed(
           </div>
         </template>
         <button
-          v-if="(props.explanationStyle === 'features' && hasMoreFeatures) || (props.explanationStyle === 'references' && hasMoreReferences)"
+          v-if="
+            (props.explanationStyle === 'features' && hasMoreFeatures) ||
+            (props.explanationStyle === 'references' && hasMoreReferences)
+          "
           class="toggle-explanations"
           type="button"
           @click="expanded = !expanded"
@@ -121,7 +128,10 @@ const hasMoreReferences = computed(
       </div>
 
       <div class="actions">
-        <button class="btn-primary more-btn" @click="emit('viewgame', props.recommendation.boardgame.id)">
+        <button
+          class="btn-primary more-btn"
+          @click="emit('viewgame', props.recommendation.boardgame.id)"
+        >
           <Icon icon="material-symbols:arrow-forward-rounded" width="20" height="20" />
           More information
         </button>
@@ -181,9 +191,13 @@ const hasMoreReferences = computed(
   gap: var(--space-1);
 }
 
-.explanation-chip { margin: 4px; }
+.explanation-chip {
+  margin: 4px;
+}
 
-.media { flex: 0 0 auto; }
+.media {
+  flex: 0 0 auto;
+}
 .game-image {
   width: 148px;
   height: 148px;
@@ -218,8 +232,15 @@ const hasMoreReferences = computed(
     padding: var(--space-3);
     gap: var(--space-3);
   }
-  .media { width: 100%; }
-  .game-image { width: 100%; height: 180px; }
-  .actions { justify-content: flex-end; }
+  .media {
+    width: 100%;
+  }
+  .game-image {
+    width: 100%;
+    height: 180px;
+  }
+  .actions {
+    justify-content: flex-end;
+  }
 }
 </style>

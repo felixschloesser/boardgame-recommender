@@ -7,7 +7,7 @@ import {
   addRecommendationToWishlist,
   inWishlist,
   removeRecommendationFromWishlist,
-} from '@/wishlist.mts'
+} from '@/wishlist.mjs'
 
 interface Props {
   id: string // rec_id is required from the route
@@ -22,6 +22,7 @@ interface FeatureChip {
   label: string
   influence?: string | number
 }
+
 interface ReferenceChip {
   bgg_id: string
   title: string
@@ -34,13 +35,13 @@ const game = ref<BoardGame | undefined>(undefined)
 const isInWishlist = ref(false)
 
 const toggleWishList = () => {
-  if (recommendation.value && inWishlist(recommendation.value)) {
-    removeRecommendationFromWishlist(recommendation.value)
+  if (recommendation.value && inWishlist(props.id, recommendation.value)) {
+    removeRecommendationFromWishlist(props.id, recommendation.value)
     isInWishlist.value = false
     return
   } else if (recommendation.value) {
     isInWishlist.value = true
-    addRecommendationToWishlist(recommendation.value)
+    addRecommendationToWishlist(props.id, recommendation.value)
   }
 }
 
@@ -49,7 +50,7 @@ onMounted(async () => {
   recommendation.value = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
   if (recommendation.value) {
     game.value = recommendation.value.boardgame
-    isInWishlist.value = inWishlist(recommendation.value)
+    isInWishlist.value = inWishlist(props.id, recommendation.value)
   }
 })
 
@@ -100,7 +101,11 @@ const referenceChips = computed<ReferenceChip[]>(() => {
       <div class="content">
         <div class="game-title">
           <h2 class="title">{{ game?.title }}</h2>
-          <button @click="toggleWishList" class="wishlist-button btn-outline" :aria-pressed="isInWishlist">
+          <button
+            @click="toggleWishList"
+            class="wishlist-button btn-outline"
+            :aria-pressed="isInWishlist"
+          >
             <Icon
               v-if="isInWishlist"
               icon="material-symbols:favorite-rounded"
@@ -209,7 +214,9 @@ const referenceChips = computed<ReferenceChip[]>(() => {
   gap: var(--space-1);
 }
 
-.explanation-chip { margin: 4px; }
+.explanation-chip {
+  margin: 4px;
+}
 
 .media {
   flex: 0 0 auto;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import type { Participant } from './api.mts'
-import * as api from './api.mts'
+import * as api from './api.mjs'
 
 const participant = ref(null as Participant | null)
 
@@ -30,9 +30,7 @@ onMounted(async () => {
       <component :is="Component" explanationStyle="analogy" />
     </RouterView>
   </main>
-  
 </template>
 
 <!-- Keep this file free of app-specific global CSS; theme is in styles/theme.css -->
-<style>
-</style>
+<style></style>

@@ -7,7 +7,7 @@ import GameDetail from '../views/GameDetail.vue'
 
 const routes = [
   { path: '/', name: 'home', component: HomePage },
-  { path: '/wishlist', name: 'wishlist', component: WishList },
+  { path: '/wishlist/:id?', name: 'wishlist', component: WishList, props: true },
   { path: '/explore/:id?', name: 'explore', component: ExplorePage, props: true },
   {
     path: '/game/:id/:gameId',

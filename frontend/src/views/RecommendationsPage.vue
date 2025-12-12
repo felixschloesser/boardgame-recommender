@@ -7,7 +7,6 @@ import * as api from '@/api.mjs'
 
 interface Props {
   id: string
-  explanationStyle: 'references' | 'features'
 }
 
 const props = defineProps<Props>()
@@ -58,7 +57,7 @@ const viewgame = (gameId: string) => {
 <template>
   <nav class="navbar">
     <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink
-    ><RouterLink to="/wishlist"
+    ><RouterLink :to="`/wishlist/${props.id}`"
       ><Icon class="icon-btn" icon="material-symbols:favorite-rounded" />
     </RouterLink>
   </nav>
@@ -67,6 +66,7 @@ const viewgame = (gameId: string) => {
     <div class="recs-grid">
       <RecommendationCard
         v-for="rec in recommendations"
+        :recId="props.id"
         :key="rec.boardgame.id"
         :recommendation="rec"
         :explanationStyle="rec.explanation.type"
@@ -76,7 +76,9 @@ const viewgame = (gameId: string) => {
     </div>
   </div>
   <div class="floating-footer">
-    <RouterLink :to="'/explore/' + props.id" class="floating-button btn-primary">Change Preferences</RouterLink>
+    <RouterLink :to="'/explore/' + props.id" class="floating-button btn-primary"
+      >Change Preferences</RouterLink
+    >
   </div>
 </template>
 
@@ -100,7 +102,17 @@ const viewgame = (gameId: string) => {
   text-decoration: none;
 }
 
-.page { padding-bottom: 72px; }
-.title { font-size: var(--text-xl); margin: var(--space-3) var(--space-2); font-weight: 700; }
-.recs-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+.page {
+  padding-bottom: 72px;
+}
+.title {
+  font-size: var(--text-xl);
+  margin: var(--space-3) var(--space-2);
+  font-weight: 700;
+}
+.recs-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
 </style>

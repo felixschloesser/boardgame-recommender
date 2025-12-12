@@ -3,7 +3,7 @@ import { RouterLink } from 'vue-router'
 import { computed } from 'vue'
 import { getWishlist } from '@/wishlist.mjs'
 
-const hasWishlist = computed(() => getWishlist().length > 0)
+const hasWishlist = computed(() => getWishlist().size > 0)
 </script>
 
 <template>
@@ -70,9 +70,9 @@ const hasWishlist = computed(() => getWishlist().length > 0)
   }
 }
 
-
-a { text-decoration: none; }
-
+a {
+  text-decoration: none;
+}
 
 .center {
   display: flex;
