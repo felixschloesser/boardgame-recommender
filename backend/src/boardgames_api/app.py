@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,18 +10,34 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
+from boardgames_api.domain.recommendations import routes as recommendation_routes
 from boardgames_api.http.errors.handlers import register_exception_handlers
 from boardgames_api.http.router import router as api_router
 from boardgames_api.infrastructure.database import ensure_seeded, init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR.parent / "static"
+logger = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
     ensure_seeded()
+    override = recommendation_routes.OVERRIDE_STUDY_GROUP
+    override_raw = recommendation_routes.OVERRIDE_RAW
+    if override:
+        logger.info("RECOMMENDATION_OVERRIDE active: %s", override.value)
+    elif override_raw:
+        logger.warning(
+            (
+                "RECOMMENDATION_OVERRIDE ignored invalid value: %s "
+                "(expected 'features' or 'references')"
+            ),
+            override_raw,
+        )
+    else:
+        logger.info("RECOMMENDATION_OVERRIDE inactive")
     yield
 
 

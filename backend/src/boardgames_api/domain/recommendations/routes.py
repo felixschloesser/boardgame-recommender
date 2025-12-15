@@ -1,7 +1,10 @@
+import logging
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Request, Security
 
+from boardgames_api.domain.participants.records import StudyGroup
 from boardgames_api.domain.participants.service import get_participant
 from boardgames_api.domain.recommendations import service as recommendation_service
 from boardgames_api.domain.recommendations.schemas import (
@@ -13,6 +16,35 @@ from boardgames_api.http.dependencies import db_session
 from boardgames_api.http.errors.schemas import ProblemDetailsResponse
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+_OVERRIDE_RAW = os.getenv("RECOMMENDATION_OVERRIDE")
+_OVERRIDE_STUDY_GROUP: StudyGroup | None
+if _OVERRIDE_RAW:
+    match _OVERRIDE_RAW.lower():
+        case "features":
+            _OVERRIDE_STUDY_GROUP = StudyGroup.FEATURES
+        case "references":
+            _OVERRIDE_STUDY_GROUP = StudyGroup.REFERENCES
+        case _:
+            _OVERRIDE_STUDY_GROUP = None
+            logger.warning(
+                "Invalid RECOMMENDATION_OVERRIDE value: %s (expected 'features' or 'references')",
+                _OVERRIDE_RAW,
+            )
+    if _OVERRIDE_STUDY_GROUP:
+        logger.info("RECOMMENDATION_OVERRIDE active: %s", _OVERRIDE_STUDY_GROUP.value)
+else:
+    _OVERRIDE_STUDY_GROUP = None
+
+
+def _override_study_group() -> StudyGroup | None:
+    return _OVERRIDE_STUDY_GROUP
+
+
+# Expose override values for startup logging elsewhere (e.g., app.py).
+OVERRIDE_RAW = _OVERRIDE_RAW
+OVERRIDE_STUDY_GROUP = _OVERRIDE_STUDY_GROUP
 
 
 @router.post(
@@ -40,7 +72,7 @@ def create_recommendation(
     Note: session_id here is the authenticated participant_id (set in the session cookie).
     """
     participant = get_participant(session_id, db=db)
-    study_group = participant.study_group
+    study_group = _override_study_group() or participant.study_group
     return recommendation_service.generate_recommendations(
         payload,
         participant_id=session_id,
