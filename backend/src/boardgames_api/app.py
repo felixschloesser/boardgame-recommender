@@ -6,11 +6,12 @@ from typing import Any, cast
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from boardgames_api.http.errors.handlers import register_exception_handlers
 from boardgames_api.http.router import router as api_router
-from boardgames_api.persistence.database import ensure_seeded, init_db
+from boardgames_api.infrastructure.database import ensure_seeded, init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR.parent / "static"
@@ -45,12 +46,22 @@ app.add_middleware(
     same_site="lax",
 )
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Serve built asset files (JS/CSS/etc.) from Vite's output directory.
+app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+spa_files = StaticFiles(directory=STATIC_DIR, html=True)
 
 register_exception_handlers(app)
 
 
-@app.get("/")
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    """
+    Serve the favicon for the SPA.
+    """
+    return FileResponse(STATIC_DIR / "favicon.ico")
+
+
+@app.get("/", include_in_schema=False)
 def root() -> FileResponse:
     """
     Serve the frontend's index.html at the root endpoint.
@@ -64,6 +75,31 @@ def health_check() -> dict[str, str]:
     Health check endpoint to verify the API is running.
     """
     return {"status": "ok"}
+
+
+@app.middleware("http")
+async def spa_fallback(request, call_next):
+    """
+    Serve the SPA (index.html) for non-API routes while preserving API and health endpoints,
+    including proper 405 handling for method mismatches on API routes.
+    """
+    path = request.url.path
+    if (
+        path.startswith("/api")
+        or path == "/health"
+        or path.startswith("/assets")
+        or path == "/favicon.ico"
+    ):
+        return await call_next(request)
+    try:
+        response = await spa_files.get_response(path=path, scope=request.scope)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return FileResponse(STATIC_DIR / "index.html")
+        raise
+    if response.status_code == 404:
+        return FileResponse(STATIC_DIR / "index.html")
+    return response
 
 
 def main() -> None:

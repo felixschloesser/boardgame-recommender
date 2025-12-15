@@ -69,7 +69,7 @@ def test_generate_filters_by_players_and_duration(monkeypatch):
     )
     monkeypatch.setattr(recommendation_service, "get_embedding_index", lambda: _FakeStore())
     monkeypatch.setattr(random, "sample", lambda seq, k: list(seq)[:k])  # deterministic fallback
-    from boardgames_api.persistence.database import session_scope
+    from boardgames_api.infrastructure.database import session_scope
 
     request = RecommendationRequest.model_validate(
         {

@@ -15,7 +15,7 @@ from boardgames_api.domain.recommendations.schemas import (
     RecommendationExplanation,
     RecommendationRequest,
 )
-from boardgames_api.persistence.database import Base
+from boardgames_api.infrastructure.database import Base
 
 
 class RecommendationRecord(Base):

@@ -14,6 +14,16 @@ type Preferences = {
   players: number
 }
 
+type ProblemDetails = {
+  type?: string
+  title?: string
+  status?: number
+  detail?: string
+  instance?: string
+  code?: string
+  invalid_params?: { name: string; reason: string; code?: string }[]
+}
+
 const apiClient = axios.create({
   baseURL: apiBaseUrl,
   headers: {
@@ -87,5 +97,24 @@ export {
   getRecommendations,
   getSessionRecommendations,
   getSessionPreferences,
+  formatApiError,
 }
-export type { Participant, Preferences }
+export type { Participant, Preferences, ProblemDetails }
+
+function formatApiError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status
+    const data = error.response?.data as ProblemDetails | undefined
+    const detail = data?.detail || data?.title
+    if (detail) {
+      return detail
+    }
+    if (status) {
+      return `Request failed with status ${status}`
+    }
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return 'An unexpected error occurred. Please try again.'
+}

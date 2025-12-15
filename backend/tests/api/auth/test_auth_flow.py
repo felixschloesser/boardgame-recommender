@@ -86,7 +86,7 @@ def test_play_context_rejects_additional_properties(client, monkeypatch):
     monkeypatch.setattr(
         recommendation_service,
         "_fetch_candidates",
-        lambda play_context, desired_results, db: [_fake_game(1)],
+        lambda play_context, desired_results, db, bgg: [_fake_game(1)],
     )
     monkeypatch.setattr(recommendation_service, "get_embedding_index", lambda: _FakeStore())
 

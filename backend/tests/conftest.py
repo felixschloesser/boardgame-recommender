@@ -4,7 +4,7 @@ from typing import Iterator
 
 import pytest
 from boardgames_api.app import app
-from boardgames_api.persistence import database
+from boardgames_api.infrastructure import database
 from fastapi.testclient import TestClient
 
 
@@ -21,6 +21,7 @@ def _temp_db(monkeypatch, tmp_path):
     """
     db_path = tmp_path / "app.sqlite3"
     monkeypatch.setenv("BOARDGAMES_DB_PATH", str(db_path))
+    monkeypatch.setenv("BOARDGAMES_ENABLE_BGG", "false")
     monkeypatch.setattr(database, "_engine", None, raising=False)
     yield
     # cleanup engine after test

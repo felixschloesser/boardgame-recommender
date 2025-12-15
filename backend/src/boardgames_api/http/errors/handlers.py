@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette import status as starlette_status
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match
 
 from boardgames_api.domain.games.exceptions import (
     GameNotFoundError,
@@ -105,6 +106,19 @@ def register_exception_handlers(app: FastAPI) -> None:
     def handle_http_exception(request: Request, exc: HTTPException) -> JSONResponse:
         status_code = exc.status_code
         headers = dict(exc.headers) if hasattr(exc, "headers") and exc.headers else None
+        if status_code == starlette_status.HTTP_405_METHOD_NOT_ALLOWED and (
+            headers is None or "allow" not in {k.lower() for k in headers}
+        ):
+            allowed: set[str] = set()
+            for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"):
+                scope = dict(request.scope)
+                scope["method"] = method
+                for route in request.app.router.routes:
+                    match, _ = route.matches(scope)
+                    if match == Match.FULL:
+                        allowed.add(method)
+            if allowed:
+                headers = {"Allow": ", ".join(sorted(allowed))}
         # Prefer custom type/title for standard statuses; fall back to about:blank otherwise.
         if status_code == starlette_status.HTTP_404_NOT_FOUND:
             problem = NotFoundResponse(detail=exc.detail or None)

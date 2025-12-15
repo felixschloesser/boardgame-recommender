@@ -18,7 +18,7 @@ from boardgames_api.domain.recommendations.schemas import (
     RecommendationRequest,
     ReferenceExplanation,
 )
-from boardgames_api.persistence import database
+from boardgames_api.infrastructure import database
 from sqlalchemy import func, select
 
 
@@ -155,7 +155,7 @@ def test_recommendation_round_trip_persists_explanations(temp_db: Path) -> None:
             )
         ],
     )
-    from boardgames_api.persistence.database import session_scope
+    from boardgames_api.infrastructure.database import session_scope
     with session_scope() as session:
         repo = RecommendationRepository(session)
         repo.save(recommendation)

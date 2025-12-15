@@ -4,7 +4,7 @@ from typing import Iterator
 
 from sqlalchemy.orm import Session
 
-from boardgames_api.persistence.database import get_session
+from boardgames_api.infrastructure.database import get_session
 
 
 def db_session() -> Iterator[Session]:
@@ -17,3 +17,4 @@ def db_session() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+

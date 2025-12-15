@@ -31,6 +31,7 @@ from boardgames_api.domain.recommendations.schemas import (
     PlayContextRequest,
     Recommendation,
     RecommendationRequest,
+    Selection,
 )
 from boardgames_api.domain.recommendations.scoring import EmbeddingScorer
 from boardgames_api.utils.embedding import get_embedding_index
@@ -52,8 +53,11 @@ def _select_explainer(study_group: StudyGroup) -> Explainer:
         f"Unknown study group '{study_group.value}' for explainer selection."
     )
 
+
 def _fetch_candidates(
-    play_context: PlayContextRequest, desired_results: int, db: Session
+    play_context: PlayContextRequest,
+    desired_results: int,
+    db: Session,
 ) -> List[BoardGameResponse]:
     """
     Fetch a limited set of candidate games filtered by play context.
@@ -77,24 +81,13 @@ def _fetch_candidates(
     return [BoardGameResponse.from_record(record) for record in records]
 
 
-def generate_recommendations(
+def _build_context(
     request: RecommendationRequest,
     participant_id: str,
     study_group: StudyGroup,
     db: Session,
-    scorer: EmbeddingScorer = DEFAULT_SCORER,
-) -> Recommendation:
-    """
-    Generate recommendations based on the participant's preferences using the embedding store.
-    """
-    logger.info(
-        "generate_recommendations: participant=%s study_group=%s liked_games=%d requested=%d",
-        participant_id,
-        study_group.value,
-        len(request.liked_games),
-        request.num_results,
-    )
-
+    scorer: EmbeddingScorer,
+) -> RecommendationContext:
     play_context = request.play_context or PlayContextRequest()
     candidates = _fetch_candidates(play_context, request.num_results, db)
     if not candidates:
@@ -124,7 +117,7 @@ def generate_recommendations(
             "Choose liked games that exist in the dataset."
         )
 
-    context = RecommendationContext(
+    return RecommendationContext(
         liked_games=list(request.liked_games),
         play_context=play_context,
         num_results=request.num_results,
@@ -134,9 +127,25 @@ def generate_recommendations(
         embedding_index=store,
     )
 
-    explainer = _select_explainer(study_group)
-    selections = run_pipeline(context=context, scorer=scorer, explainer=explainer,db=db)
 
+def _run_recommender(
+    context: RecommendationContext,
+    scorer: EmbeddingScorer,
+    explainer: Explainer,
+    db: Session,
+) -> List[Selection]:
+    # scorer.score raises RecommendationUnavailableError on failure; let it bubble.
+    scorer.score(context)
+    return run_pipeline(context=context, scorer=scorer, explainer=explainer, db=db)
+
+
+def _persist_recommendation(
+    request: RecommendationRequest,
+    participant_id: str,
+    study_group: StudyGroup,
+    selections: List[Selection],
+    db: Session,
+) -> Recommendation:
     rec_id = f"rec-{uuid.uuid4().hex}"
     result = RecommendationResult(
         id=rec_id,
@@ -180,6 +189,42 @@ def generate_recommendations(
         len(result.selections),
     )
     return Recommendation.from_domain(result)
+
+
+def generate_recommendations(
+    request: RecommendationRequest,
+    participant_id: str,
+    study_group: StudyGroup,
+    db: Session,
+    scorer: EmbeddingScorer = DEFAULT_SCORER,
+) -> Recommendation:
+    """
+    Generate recommendations based on the participant's preferences using the embedding store.
+    """
+    logger.info(
+        "generate_recommendations: participant=%s study_group=%s liked_games=%d requested=%d",
+        participant_id,
+        study_group.value,
+        len(request.liked_games),
+        request.num_results,
+    )
+
+    context = _build_context(
+        request=request,
+        participant_id=participant_id,
+        study_group=study_group,
+        db=db,
+        scorer=scorer,
+    )
+    explainer = _select_explainer(study_group)
+    selections = _run_recommender(context=context, scorer=scorer, explainer=explainer, db=db)
+    return _persist_recommendation(
+        request=request,
+        participant_id=participant_id,
+        study_group=study_group,
+        selections=selections,
+        db=db,
+    )
 
 
 def get_recommendation(

@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from boardgames_api.domain.games.exceptions import GameNotFoundError
+from boardgames_api.domain.games.exceptions import GameNotFoundError, GameValidationError
 from boardgames_api.domain.games.repository import BoardgameRepository
 from boardgames_api.domain.games.schemas import (
     BoardGameResponse,
@@ -47,8 +47,19 @@ def get_boardgame(bgg_id: int, db: Session) -> BoardGameResponse:
     """
     Retrieve a specific boardgame by its BGG ID.
     """
+    max_sqlite_int = 2**63 - 1
+    if bgg_id < 1:
+        raise GameValidationError(
+            "Path parameter bgg_id must be between 1 and 9223372036854775807."
+        )
+    if bgg_id > max_sqlite_int:
+        raise GameNotFoundError("Game not found.")
+
     repo = BoardgameRepository(db)
-    record = repo.get(bgg_id)
+    try:
+        record = repo.get(bgg_id)
+    except OverflowError as exc:
+        raise GameNotFoundError("Game not found.") from exc
     if record:
         return record.to_response()
 

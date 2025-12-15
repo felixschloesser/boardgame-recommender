@@ -3,7 +3,7 @@ from fastapi.security import APIKeyCookie
 from starlette import status
 
 from boardgames_api.domain.participants.repository import ParticipantRepository
-from boardgames_api.persistence.database import session_scope
+from boardgames_api.infrastructure.database import session_scope
 
 # Security scheme so endpoints show lock icon in OpenAPI and set cookie auth.
 session_cookie_scheme = APIKeyCookie(name="session_id", auto_error=False)

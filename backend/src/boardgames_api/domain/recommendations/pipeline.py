@@ -2,22 +2,24 @@ from __future__ import annotations
 
 from typing import Any, List, Protocol
 
+from sqlalchemy.orm import Session
+
 from boardgames_api.domain.games.schemas import BoardGameResponse
 from boardgames_api.domain.recommendations.context import RecommendationContext, ScoredCandidate
 from boardgames_api.domain.recommendations.schemas import RecommendationExplanation, Selection
 
-from sqlalchemy.orm import Session
 
 class Scorer(Protocol):
-    def score(self, context: RecommendationContext) -> List[ScoredCandidate]:
-        ...
+    def score(self, context: RecommendationContext) -> List[ScoredCandidate]: ...
 
 
 class Explainer(Protocol):
     def explain(
-        self, context: RecommendationContext, scored: List[ScoredCandidate], db:Session
-    ) -> List[RecommendationExplanation]:
-        ...
+        self,
+        context: RecommendationContext,
+        scored: List[ScoredCandidate],
+        db: Session,
+    ) -> List[RecommendationExplanation]: ...
 
 
 def run_pipeline(
@@ -25,7 +27,7 @@ def run_pipeline(
     context: RecommendationContext,
     scorer: Scorer,
     explainer: Explainer,
-    db:Session,
+    db: Session,
 ) -> List[Selection]:
     scored = scorer.score(context)
     ranked = sorted(scored, key=lambda item: item.score, reverse=True)

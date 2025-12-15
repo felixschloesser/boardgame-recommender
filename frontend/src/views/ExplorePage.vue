@@ -5,6 +5,7 @@ import GameAdder from '@/components/GameAdder.vue'
 import type { Option } from '@/boardGame.mjs'
 import type { Preferences } from '@/api.mts'
 import * as api from '@/api.mjs'
+import { formatApiError } from '@/api.mjs'
 import type BoardGame from '@/boardGame.mjs'
 
 interface Props {
@@ -16,6 +17,7 @@ const router = useRouter()
 
 const games = ref<Option[]>([])
 const earlierPreferences = ref<Preferences | undefined>(undefined)
+const errorMessage = ref<string | null>(null)
 
 const gameAdderRef = ref<InstanceType<typeof GameAdder>>()
 const playerCount = ref(4)
@@ -36,14 +38,18 @@ const selectAll = (e: Event) => {
 }
 
 onMounted(async () => {
-  const gameObj: BoardGame[] = await api.getGames()
-  const gamesToAdd = gameObj.map((game) => ({
-    id: game.id,
-    name: game.title,
-  }))
-  games.value.push(...gamesToAdd)
-  // fetch earlier preferences if id is provided
-  await fetchEarlierPreferences()
+  try {
+    const gameObj: BoardGame[] = await api.getGames()
+    const gamesToAdd = gameObj.map((game) => ({
+      id: game.id,
+      name: game.title,
+    }))
+    games.value.push(...gamesToAdd)
+    // fetch earlier preferences if id is provided
+    await fetchEarlierPreferences()
+  } catch (error) {
+    errorMessage.value = formatApiError(error)
+  }
 })
 
 const fetchEarlierPreferences = async () => {
@@ -57,16 +63,22 @@ const fetchEarlierPreferences = async () => {
 
 const confirm = async () => {
   if (gameAdderRef.value?.addedGames && gameAdderRef.value.addedGames.length > 0) {
+    errorMessage.value = null
     loading.value = true // start loading state
     // get the selected games from the gameAdder component
     const selectedGames: Option[] = gameAdderRef.value.addedGames
     // fetch recommendations & redirect
-    await api
-      .getRecommendations({ liked_games: selectedGames, players: playerCount.value })
-      .then((id) => router.push({ path: `/recommendations/${id}` }))
-      .finally(() => {
-        loading.value = false // stop loading state
+    try {
+      const id = await api.getRecommendations({
+        liked_games: selectedGames,
+        players: playerCount.value,
       })
+      router.push({ path: `/recommendations/${id}` })
+    } catch (error) {
+      errorMessage.value = formatApiError(error)
+    } finally {
+      loading.value = false // stop loading state
+    }
   }
 }
 </script>
@@ -79,6 +91,10 @@ const confirm = async () => {
     /></RouterLink>
   </nav>
   <h1 class="header">Enter games you already tried and liked here:</h1>
+  <p v-if="errorMessage" class="error-banner" role="alert">
+    <Icon icon="mdi:alert-circle" class="icon-alert" />
+    {{ errorMessage }}
+  </p>
   <GameAdder ref="gameAdderRef" :options="games" />
   <h1 class="header">Enter preferred number of players:</h1>
   <div class="players-control card">
@@ -202,6 +218,24 @@ const confirm = async () => {
   padding: var(--space-3) var(--space-4);
   font-size: var(--text-md);
   gap: var(--space-2);
+}
+
+.error-banner {
+  margin: 0 auto var(--space-4);
+  padding: var(--space-3);
+  max-width: 640px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  background: #ffe8e6;
+  color: #8b1b0f;
+  border: 1px solid #f5c6c2;
+}
+
+.icon-alert {
+  width: 20px;
+  height: 20px;
 }
 
 /* Spinner styles moved to global theme.css (.spin utility) */

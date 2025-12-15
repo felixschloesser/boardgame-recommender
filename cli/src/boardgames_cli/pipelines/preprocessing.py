@@ -395,6 +395,8 @@ def _assemble_feature_table(
     categorical_columns = _materialize_categorical_columns(
         frame, config.features.categorical
     )
+    # Keep original text columns (e.g., description) intact; emit tokenized text into
+    # separate text_*_tokens columns only.
     numeric_columns = config.features.numeric
     base_columns = [
         column

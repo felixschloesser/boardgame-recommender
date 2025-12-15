@@ -4,7 +4,7 @@ from enum import Enum
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from boardgames_api.persistence.database import Base
+from boardgames_api.infrastructure.database import Base
 
 
 class StudyGroup(str, Enum):

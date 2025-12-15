@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from boardgames_api.domain.participants.repository import ParticipantRepository
-from boardgames_api.persistence import database
+from boardgames_api.infrastructure import database
 
 
 def test_participant_persists_across_client_recreation(tmp_path, monkeypatch):

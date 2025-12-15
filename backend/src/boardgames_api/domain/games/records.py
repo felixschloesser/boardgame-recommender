@@ -7,7 +7,7 @@ from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import Mapped, mapped_column
 
 from boardgames_api.domain.games.schemas import BoardGameResponse
-from boardgames_api.persistence.database import Base
+from boardgames_api.infrastructure.database import Base
 
 
 class BoardgameRecord(Base):
