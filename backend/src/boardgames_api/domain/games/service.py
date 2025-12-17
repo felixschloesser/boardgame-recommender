@@ -2,12 +2,33 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from boardgames_api.domain.games.bgg_metadata import BggMetadataFetcher
 from boardgames_api.domain.games.exceptions import GameNotFoundError, GameValidationError
 from boardgames_api.domain.games.repository import BoardgameRepository
 from boardgames_api.domain.games.schemas import (
     BoardGameResponse,
     PaginatedBoardGamesResponse,
 )
+
+
+def _apply_metadata_overrides(
+    response: BoardGameResponse, metadata: object | None
+) -> BoardGameResponse:
+    """
+    Overlay BGG-sourced description/image onto an existing response.
+    """
+    if metadata is None:
+        return response
+    description = getattr(metadata, "description", None) or None
+    image_url = getattr(metadata, "image_url", None) or None
+    updates = {}
+    if description:
+        updates["description"] = description
+    if image_url:
+        updates["image_url"] = image_url
+    if not updates:
+        return response
+    return response.model_copy(update=updates)
 
 
 def list_boardgames(
@@ -33,7 +54,14 @@ def list_boardgames(
         limit=limit,
         offset=offset,
     )
-    items = [record.to_response() for record in records]
+    fetcher = BggMetadataFetcher(db)
+    items = [
+        _apply_metadata_overrides(
+            record.to_response(),
+            fetcher.get(record.id, allow_live_fetch=False),
+        )
+        for record in records
+    ]
 
     return PaginatedBoardGamesResponse(
         total=total,
@@ -61,6 +89,7 @@ def get_boardgame(bgg_id: int, db: Session) -> BoardGameResponse:
     except OverflowError as exc:
         raise GameNotFoundError("Game not found.") from exc
     if record:
-        return record.to_response()
+        metadata = BggMetadataFetcher(db).get(bgg_id, allow_live_fetch=True)
+        return _apply_metadata_overrides(record.to_response(), metadata)
 
     raise GameNotFoundError("Game not found.")

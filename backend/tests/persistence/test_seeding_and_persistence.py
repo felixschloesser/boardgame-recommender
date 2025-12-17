@@ -31,9 +31,14 @@ def temp_db(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("BOARDGAMES_DB_PATH", str(db_path))
     # Reset engine for this test run and restore afterwards.
     original_engine = database._engine
+    original_default = database.DEFAULT_DB_PATH
+    monkeypatch.setattr(database, "DEFAULT_DB_PATH", db_path, raising=False)
     monkeypatch.setattr(database, "_engine", None, raising=False)
+    monkeypatch.setattr(database, "SessionLocal", None, raising=False)
+    database.init_db()
     yield db_path
     database._engine = original_engine
+    database.DEFAULT_DB_PATH = original_default
 
 
 def test_seed_skips_invalid_rows(monkeypatch, tmp_path: Path, temp_db: Path) -> None:
@@ -156,6 +161,7 @@ def test_recommendation_round_trip_persists_explanations(temp_db: Path) -> None:
         ],
     )
     from boardgames_api.infrastructure.database import session_scope
+
     with session_scope() as session:
         repo = RecommendationRepository(session)
         repo.save(recommendation)
@@ -165,6 +171,5 @@ def test_recommendation_round_trip_persists_explanations(temp_db: Path) -> None:
     selection = reloaded.selections[0]
     assert selection.explanation.references and selection.explanation.references[0].bgg_id == 1
     assert (
-        selection.explanation.features
-        and selection.explanation.features[0].influence == "positive"
+        selection.explanation.features and selection.explanation.features[0].influence == "positive"
     )

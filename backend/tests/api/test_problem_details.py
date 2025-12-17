@@ -1,11 +1,5 @@
 from typing import Iterable
 
-from boardgames_api.app import app
-from fastapi.testclient import TestClient
-
-# Use module-level client for backward compatibility; new tests use fixtures.
-client = TestClient(app)
-
 
 def _assert_problem_details(
     body: dict,
@@ -34,7 +28,7 @@ def _assert_problem_details(
         assert "invalid_params" not in body or body.get("invalid_params") is None
 
 
-def test_recommendations_validation_errors_return_rfc7807_problem_details() -> None:
+def test_recommendations_validation_errors_return_rfc7807_problem_details(client) -> None:
     participant_resp = client.post("/api/auth/participant", json={})
     assert participant_resp.status_code == 201
     pid = participant_resp.json().get("participant_id")
@@ -61,7 +55,7 @@ def test_recommendations_validation_errors_return_rfc7807_problem_details() -> N
     assert "positive integers" in reasons or "at least one" in reasons
 
 
-def test_not_found_returns_rfc7807_problem_details() -> None:
+def test_not_found_returns_rfc7807_problem_details(client) -> None:
     response = client.get("/api/games/9999999")
 
     assert response.status_code == 404
@@ -76,7 +70,7 @@ def test_not_found_returns_rfc7807_problem_details() -> None:
     assert body.get("detail")
 
 
-def test_unauthorized_returns_rfc7807_problem_details() -> None:
+def test_unauthorized_returns_rfc7807_problem_details(client) -> None:
     client.cookies.clear()
     response = client.delete("/api/auth/session")
 

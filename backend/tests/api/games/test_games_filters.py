@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from boardgames_api.app import app
-from fastapi.testclient import TestClient
 
-
-def test_games_filters_are_case_insensitive_prefix() -> None:
+def test_games_filters_are_case_insensitive_prefix(client) -> None:
     """
     Query filters for genre/mechanics/themes should be case-insensitive and prefix-based.
     """
-    client = TestClient(app)
     resp = client.get("/api/games/", params={"genre": "Strat"})
     assert resp.status_code == 200
     items = resp.json().get("items", [])

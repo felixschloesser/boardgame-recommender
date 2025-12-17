@@ -16,6 +16,7 @@ Boardgame Recommender is a system designed to help board game enthusiasts discov
 - **FastAPI-Based**: A lightweight and efficient backend for serving recommendations.
 - **SQLite Integration**: Imports preprocessed data and trained models for querying.
 - **RESTful API**: Exposes endpoints for recommendations and metadata.
+- **Live BGG Metadata**: Game detail responses enrich descriptions and cover images from the BoardGameGeek API (requires `BGG_ACCESS_TOKEN`, toggle with `BGG_FETCH_ENABLED=0`, cache TTL via `BGG_METADATA_TTL_SECONDS`).
 
 ### Frontend
 - **Single Page Application (SPA)**: A Vue-based user interface.

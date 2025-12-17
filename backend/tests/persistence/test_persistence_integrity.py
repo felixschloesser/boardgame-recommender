@@ -9,6 +9,9 @@ def test_participant_persists_across_client_recreation(tmp_path, monkeypatch):
     db_path = tmp_path / "persist.sqlite3"
     monkeypatch.setenv("BOARDGAMES_DB_PATH", str(db_path))
     monkeypatch.setattr(database, "_engine", None, raising=False)
+    monkeypatch.setattr(database, "DEFAULT_DB_PATH", db_path, raising=False)
+    monkeypatch.setattr(database, "SessionLocal", None, raising=False)
+    database.init_db()
 
     from boardgames_api.app import app
     from fastapi.testclient import TestClient

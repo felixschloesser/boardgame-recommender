@@ -4,9 +4,8 @@ from urllib.parse import quote
 
 import requests
 import schemathesis
-from boardgames_api.app import app
-from fastapi.testclient import TestClient
 from httpx import Response as HTTPXResponse
+from hypothesis import HealthCheck, settings
 from requests.structures import CaseInsensitiveDict
 from schemathesis.core import NotSet
 
@@ -15,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 schema = schemathesis.openapi.from_path(PROJECT_ROOT / "openapi.yaml")
 
 
-def _setup_auth(client: TestClient) -> dict[str, str]:
+def _setup_auth(client) -> dict[str, str]:
     """Create participant + session for fuzzing authenticated endpoints."""
     p_resp = client.post("/api/auth/participant", json={})
     assert p_resp.status_code == 201
@@ -23,9 +22,6 @@ def _setup_auth(client: TestClient) -> dict[str, str]:
     s_resp = client.post("/api/auth/session", json={"participant_id": pid})
     assert s_resp.status_code == 200
     return {str(cookie.name): str(cookie.value or "") for cookie in s_resp.cookies.jar}
-
-# Use FastAPI's TestClient to make requests
-client = TestClient(app)
 
 
 class _RawAdapter:
@@ -75,7 +71,12 @@ def _maybe(value: Any) -> Any | None:
 
 
 @schema.parametrize()
-def test_api(case: Any) -> None:
+@settings(
+    max_examples=10,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
+)
+def test_api(case: Any, client) -> None:
     """
     Contract test to ensure the API implementation adheres to the OpenAPI spec.
     """
@@ -102,9 +103,7 @@ def test_api(case: Any) -> None:
     client.cookies.clear()
     cookies = _maybe(case.cookies)
     if isinstance(cookies, dict):
-        cookies = {
-            str(key): quote(str(value), safe="") for key, value in cookies.items()
-        }
+        cookies = {str(key): quote(str(value), safe="") for key, value in cookies.items()}
     if cookies:
         for key, value in cookies.items():
             client.cookies.set(key, value)

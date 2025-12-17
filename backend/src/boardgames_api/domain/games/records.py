@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Float, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, Integer, String, Text
 from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,4 +43,13 @@ class BoardgameRecord(Base):
         return BoardGameResponse.from_record(self)
 
 
-__all__ = ["BoardgameRecord"]
+class BoardgameBggMetadataRecord(Base):
+    __tablename__ = "boardgame_bgg_metadata"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str] = mapped_column(String, default="")
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+__all__ = ["BoardgameRecord", "BoardgameBggMetadataRecord"]

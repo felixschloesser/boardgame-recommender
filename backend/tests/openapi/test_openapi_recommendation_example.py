@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 
-def test_openapi_example_request_succeeds(monkeypatch):
-    from boardgames_api.app import app
-    from fastapi.testclient import TestClient
-
-    client = TestClient(app)
+def test_openapi_example_request_succeeds(client, monkeypatch):
     p_resp = client.post("/api/auth/participant", json={})
     assert p_resp.status_code == 201
     pid = p_resp.json().get("participant_id")

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
+from boardgames_api.domain.games.bgg_metadata import log_bgg_status
 from boardgames_api.domain.recommendations import routes as recommendation_routes
 from boardgames_api.http.errors.handlers import register_exception_handlers
 from boardgames_api.http.router import router as api_router
@@ -38,6 +39,7 @@ async def lifespan(_: FastAPI):
         )
     else:
         logger.info("RECOMMENDATION_OVERRIDE inactive")
+    log_bgg_status(logger)
     yield
 
 

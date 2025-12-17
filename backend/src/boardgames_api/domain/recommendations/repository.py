@@ -1,8 +1,14 @@
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from boardgames_api.domain.games.bgg_metadata import (
+    BggMetadataFetcher,
+    fetch_metadata_live,
+)
 from boardgames_api.domain.recommendations.models import (
     RecommendationResult,
 )
@@ -23,6 +29,26 @@ class RecommendationRepository:
         """
         Persist a domain recommendation result.
         """
+        fetcher = BggMetadataFetcher(self.session)
+        metadata_map = {}
+        selections = result.selections or []
+        fetch_enabled = os.getenv("BGG_FETCH_ENABLED", "1").lower() not in {"0", "false", "no"}
+        access_token = os.getenv("BGG_ACCESS_TOKEN")
+        if selections and fetch_enabled and access_token:
+            workers = min(8, len(selections))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                future_map = {
+                    executor.submit(fetch_metadata_live, sel.boardgame.id): sel.boardgame.id
+                    for sel in selections
+                }
+                for future in as_completed(future_map):
+                    bgg_id = future_map[future]
+                    try:
+                        metadata_map[bgg_id] = future.result()
+                    except Exception as exc:  # pragma: no cover
+                        logger.warning("Parallel BGG fetch failed for %s: %s", bgg_id, exc)
+                        metadata_map[bgg_id] = None
+
         record = RecommendationRecord(
             id=result.id,
             participant_id=result.participant_id,
@@ -32,24 +58,9 @@ class RecommendationRepository:
             intent=result.intent.model_dump(mode="json"),
             recommendations=[
                 {
-                    "boardgame": {
-                        "id": sel.boardgame.id,
-                        "title": sel.boardgame.title,
-                        "description": sel.boardgame.description,
-                        "mechanics": sel.boardgame.mechanics,
-                        "genre": sel.boardgame.genre,
-                        "themes": sel.boardgame.themes,
-                        "min_players": sel.boardgame.min_players,
-                        "max_players": sel.boardgame.max_players,
-                        "complexity": sel.boardgame.complexity,
-                        "age_recommendation": sel.boardgame.age_recommendation,
-                        "num_user_ratings": sel.boardgame.num_user_ratings,
-                        "avg_user_rating": sel.boardgame.avg_user_rating,
-                        "year_published": sel.boardgame.year_published,
-                        "playing_time_minutes": sel.boardgame.playing_time_minutes,
-                        "image_url": sel.boardgame.image_url,
-                        "bgg_url": sel.boardgame.bgg_url,
-                    },
+                    "boardgame": self._payload_with_metadata(
+                        fetcher, sel.boardgame, metadata_map.get(sel.boardgame.id)
+                    ),
                     "explanation": sel.explanation.model_dump(mode="json"),
                 }
                 for sel in result.selections
@@ -57,6 +68,36 @@ class RecommendationRepository:
         )
         self.session.merge(record)
         self.session.commit()
+
+    @staticmethod
+    def _payload_with_metadata(fetcher: BggMetadataFetcher, boardgame, metadata_override=None):
+        metadata = (
+            metadata_override
+            if metadata_override is not None
+            else fetcher.get(boardgame.id, allow_live_fetch=False)
+        )
+        description = (
+            metadata.description if metadata and metadata.description else boardgame.description
+        )
+        image_url = metadata.image_url if metadata and metadata.image_url else boardgame.image_url
+        return {
+            "id": boardgame.id,
+            "title": boardgame.title,
+            "description": description,
+            "mechanics": boardgame.mechanics,
+            "genre": boardgame.genre,
+            "themes": boardgame.themes,
+            "min_players": boardgame.min_players,
+            "max_players": boardgame.max_players,
+            "complexity": boardgame.complexity,
+            "age_recommendation": boardgame.age_recommendation,
+            "num_user_ratings": boardgame.num_user_ratings,
+            "avg_user_rating": boardgame.avg_user_rating,
+            "year_published": boardgame.year_published,
+            "playing_time_minutes": boardgame.playing_time_minutes,
+            "image_url": image_url,
+            "bgg_url": boardgame.bgg_url,
+        }
 
     def get(self, recommendation_id: str) -> Optional[RecommendationResult]:
         """

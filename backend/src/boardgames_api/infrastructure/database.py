@@ -12,9 +12,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATA_ROOT = Path(__file__).resolve().parents[4] / "data"
-DEFAULT_DB_PATH = Path(
-    os.getenv("BOARDGAMES_DB_PATH", DATA_ROOT / "app.sqlite3")
-).resolve()
+DEFAULT_DB_PATH = Path(os.getenv("BOARDGAMES_DB_PATH", DATA_ROOT / "app.sqlite3")).resolve()
 DEFAULT_PARQUET_PATH = Path(
     os.getenv(
         "BOARDGAMES_PARQUET_PATH",
@@ -38,9 +36,23 @@ _engine: Engine | None = None
 SessionLocal: sessionmaker | None = None
 
 
-def _create_engine(db_path: Path = DEFAULT_DB_PATH) -> Engine:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(f"sqlite:///{db_path}", future=True)
+def _create_engine(db_path: Path | None = None) -> Engine:
+    resolved_path = db_path or DEFAULT_DB_PATH
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(
+        f"sqlite:///{resolved_path}",
+        future=True,
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+    # Reduce write contention under concurrent access. If the DB is locked at startup,
+    # continue with defaults rather than failing to boot.
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+            conn.exec_driver_sql("PRAGMA busy_timeout=30000")
+    except Exception as exc:
+        logger.warning("Unable to set SQLite pragmas (continuing with defaults): %s", exc)
+    return engine
 
 
 def get_engine() -> Engine:
@@ -106,6 +118,10 @@ def init_db() -> None:
 
     # Import records so metadata is populated without circular imports.
     from boardgames_api.domain.games import records as games_records  # noqa: F401
+    from boardgames_api.domain.participants import records as participants_records  # noqa: F401
+    from boardgames_api.domain.recommendations import (
+        records as recommendations_records,  # noqa: F401
+    )
 
     Base.metadata.create_all(engine)
 
@@ -177,8 +193,7 @@ def ensure_seeded() -> None:
         )
         if invalid:
             parquet_hint += (
-                " Detected invalid rows (negative metrics or placeholders); "
-                "regenerate the dataset."
+                " Detected invalid rows (negative metrics or placeholders); regenerate the dataset."
             )
         raise RuntimeError(
             f"Boardgame catalog not seeded properly (loaded {seeded} rows). {parquet_hint}"
@@ -193,9 +208,7 @@ def _boardgames_invalid(session: Session) -> bool:
 
     min_complexity = session.scalar(select(func.min(BoardgameRecord.complexity)))
     min_age = session.scalar(select(func.min(BoardgameRecord.age_recommendation)))
-    min_playtime = session.scalar(
-        select(func.min(BoardgameRecord.playing_time_minutes))
-    )
+    min_playtime = session.scalar(select(func.min(BoardgameRecord.playing_time_minutes)))
     min_min_players = session.scalar(select(func.min(BoardgameRecord.min_players)))
     placeholder_count = (
         session.scalar(

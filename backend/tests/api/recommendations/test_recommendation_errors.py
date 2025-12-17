@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from boardgames_api.app import app
 from boardgames_api.domain.games.schemas import BoardGameResponse
-from fastapi.testclient import TestClient
 
 from boardgames_api.domain.recommendations import service as recommendation_service
 
@@ -42,12 +40,10 @@ def _fake_game(game_id: int, min_players: int, max_players: int) -> BoardGameRes
     )
 
 
-def test_recommendation_returns_400_when_no_candidates(monkeypatch):
+def test_recommendation_returns_400_when_no_candidates(client, monkeypatch):
     """
     API should return 400 (not 500) when filters remove all candidates.
     """
-
-    client = TestClient(app)
     participant_resp = client.post("/api/auth/participant", json={})
     assert participant_resp.status_code == 201
     pid = participant_resp.json().get("participant_id")

@@ -18,6 +18,9 @@ dependencies = [
     "scikit-learn",
     "types-requests>=2.32.4.20250913",
     "itsdangerous>=2.2.0",
+    "bgg-api>=1.1.14",
+    # bgg-api pins requests-cache <2; stay on 1.1.x to avoid newer API changes (cache disabled in client)
+    "requests-cache>=1.1.1,<1.2",
 ]
 
 
