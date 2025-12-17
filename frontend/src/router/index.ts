@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import HomePage from '../views/HomePage.vue'
 import WishList from '../views/WishList.vue'
 import ExplorePage from '../views/ExplorePage.vue'
@@ -13,7 +13,11 @@ const routes = [
     path: '/game/:id/:gameId',
     name: 'game',
     component: GameDetail,
-    props: true,
+    props: (route: RouteLocationNormalized) => ({
+      id: route.params.id as string,
+      gameId: Number(route.params.gameId),
+      explanationStyle: route.params.explanationStyle,
+    }),
   },
   {
     path: '/recommendations/:id',

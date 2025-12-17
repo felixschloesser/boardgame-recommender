@@ -9,7 +9,6 @@ client = TestClient(app)
 
 def _assert_problem_details(
     body: dict,
-    *,
     status: int,
     title: str,
     type_: str = "about:blank",

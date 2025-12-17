@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -20,10 +22,9 @@ class PlayContextRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    players: Optional[int] = Field(default=None, ge=1, description="Number of players.")
-    duration: Optional[PlayDuration] = Field(
-        default=None,
-        description="Approximate session duration bucket.",
+    players: int = Field(ge=1, description="Number of players.")
+    duration: PlayDuration | None = Field(
+        default=None, description="Approximate session duration bucket."
     )
 
 
@@ -34,12 +35,11 @@ class RecommendationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    liked_games: List[int] = Field(
+    liked_games: list[int] = Field(
         description="List of game IDs the participant likes.",
         min_length=1,
     )
-    play_context: Optional[PlayContextRequest] = Field(
-        default=None,
+    play_context: PlayContextRequest = Field(
         description="Context for the play session, including player count and duration.",
     )
     num_results: int = Field(
@@ -51,7 +51,7 @@ class RecommendationRequest(BaseModel):
 
     @field_validator("liked_games")
     @classmethod
-    def _validate_game_ids(cls, value: List[int]) -> List[int]:
+    def _validate_game_ids(cls, value: list[int]) -> list[int]:
         if len(set(value)) != len(value):
             raise ValueError("Game IDs must be unique.")
         if any(item < 1 for item in value):
@@ -66,14 +66,12 @@ class RecommendationExplanation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: str = Field(
-        description="Type of explanation (e.g., 'features', 'references')."
-    )
-    features: Optional[List["FeatureExplanation"]] = Field(
+    type: str = Field(description="Type of explanation (e.g., 'features', 'references').")
+    features: list["FeatureExplanation"] | None = Field(
         default=None,
         description="Feature-based reasoning for the recommendation.",
     )
-    references: Optional[List["ReferenceExplanation"]] = Field(
+    references: list["ReferenceExplanation"] | None = Field(
         default=None,
         description="Reference-based reasoning using familiar games.",
     )
@@ -112,7 +110,7 @@ class Selection(BaseModel):
     )
 
 
-class Recommendation(BaseModel):
+class RecommendationResponse(BaseModel):
     """
     A stored recommendation with intent and generated selections.
     """
@@ -121,20 +119,18 @@ class Recommendation(BaseModel):
 
     id: str = Field(description="Unique identifier for the recommendation.")
     participant_id: str = Field(description="Unique identifier for the participant.")
-    created_at: str = Field(
-        description="Timestamp when the recommendation was created."
-    )
+    created_at: str = Field(description="Timestamp when the recommendation was created.")
     intent: RecommendationRequest = Field(
         description="The original request that generated the recommendations.",
     )
     model_version: str = Field(description="Version of the recommendation model used.")
     experiment_group: str = Field(description="Experiment group for the participant.")
-    recommendations: List[Selection] = Field(
+    recommendations: list[Selection] = Field(
         description="List of generated recommendations.",
     )
 
     @classmethod
-    def from_domain(cls, result: "RecommendationResult") -> "Recommendation":
+    def from_domain(cls, result: "RecommendationResult") -> "RecommendationResponse":
         return cls.model_validate(
             {
                 "id": result.id,
@@ -143,31 +139,47 @@ class Recommendation(BaseModel):
                 "intent": result.intent,
                 "model_version": result.model_version,
                 "experiment_group": result.experiment_group.value,
-                "recommendations": [
-                    {
-                        "boardgame": BoardGameResponse.model_validate(
-                            {
-                                "id": str(sel.boardgame.id),
-                                "title": sel.boardgame.title,
-                                "description": sel.boardgame.description,
-                                "mechanics": sel.boardgame.mechanics,
-                                "genre": sel.boardgame.genre,
-                                "themes": sel.boardgame.themes,
-                                "min_players": sel.boardgame.min_players,
-                                "max_players": sel.boardgame.max_players,
-                                "complexity": sel.boardgame.complexity or 0,
-                                "age_recommendation": sel.boardgame.age_recommendation or 0,
-                                "num_user_ratings": sel.boardgame.num_user_ratings or 0,
-                                "avg_user_rating": sel.boardgame.avg_user_rating or 0,
-                                "year_published": sel.boardgame.year_published or 0,
-                                "playing_time_minutes": sel.boardgame.playing_time_minutes,
-                                "image_url": sel.boardgame.image_url,
-                                "bgg_url": sel.boardgame.bgg_url,
-                            }
-                        ),
-                        "explanation": sel.explanation,
-                    }
-                    for sel in result.selections
-                ],
+                "recommendations": [_selection_from_domain(sel) for sel in result.selections],
             }
         )
+
+
+def _selection_from_domain(selection) -> dict:
+    """
+    Translate a domain RecommendationSelection into the API response schema shape.
+    """
+    return {
+        "boardgame": BoardGameResponse.model_validate(
+            {
+                "id": str(selection.boardgame.id),
+                "title": selection.boardgame.title,
+                "description": selection.boardgame.description,
+                "mechanics": selection.boardgame.mechanics,
+                "genre": selection.boardgame.genre,
+                "themes": selection.boardgame.themes,
+                "min_players": selection.boardgame.min_players,
+                "max_players": selection.boardgame.max_players,
+                "complexity": selection.boardgame.complexity or 0,
+                "age_recommendation": selection.boardgame.age_recommendation or 0,
+                "num_user_ratings": selection.boardgame.num_user_ratings or 0,
+                "avg_user_rating": selection.boardgame.avg_user_rating or 0,
+                "year_published": selection.boardgame.year_published or 0,
+                "playing_time_minutes": selection.boardgame.playing_time_minutes,
+                "image_url": selection.boardgame.image_url,
+                "bgg_url": selection.boardgame.bgg_url,
+            }
+        ),
+        "explanation": selection.explanation,
+    }
+
+
+__all__ = [
+    "RecommendationRequest",
+    "RecommendationExplanation",
+    "FeatureExplanation",
+    "ReferenceExplanation",
+    "Selection",
+    "RecommendationResponse",
+    "PlayContextRequest",
+    "PlayDuration",
+]

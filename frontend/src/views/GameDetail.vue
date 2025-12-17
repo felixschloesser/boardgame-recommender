@@ -12,7 +12,7 @@ import {
 interface Props {
   id: string // rec_id is required from the route
   explanationStyle: 'references' | 'features'
-  gameId: string
+  gameId: number
 }
 
 const props = defineProps<Props>()
@@ -24,7 +24,7 @@ interface FeatureChip {
 }
 
 interface ReferenceChip {
-  bgg_id: string
+  bgg_id: number
   title: string
   influence?: string | number
 }

@@ -48,7 +48,7 @@ const fetchRecommendations = async (session_id: string) => {
   recommendations.value = await api.getSessionRecommendations(session_id)
 }
 
-const viewgame = (gameId: string) => {
+const viewgame = (gameId: number) => {
   // navigate to game detail page
   router.push(`/game/${props.id}/${gameId}`)
 }

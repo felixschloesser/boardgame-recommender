@@ -20,7 +20,6 @@ tags:
     description: Creation and retrieval of recommendation sessions.
 
 components:
-
   securitySchemes:
     sessionCookie:
       type: apiKey
@@ -28,7 +27,6 @@ components:
       name: session_id
 
   schemas:
-
     ProblemDetails:
       type: object
       description: >
@@ -117,7 +115,7 @@ components:
       description: |
         Canonical boardgame metadata aligned with the model’s feature set.
       properties:
-        id: { type: string, pattern: "^[0-9]+$" }
+        id: { type: integer, minimum: 1 }
         title: { type: string, minLength: 1 }
         description: { type: string }
         mechanics:
@@ -269,8 +267,6 @@ components:
           default: 10
       required: [num_results, liked_games, play_context]
 
-
-
     RecommendationResponse:
       type: object
       description: |
@@ -299,7 +295,6 @@ components:
       unevaluatedProperties: false
 
 paths:
-
   /auth/participant:
     post:
       tags: [auth]
@@ -585,32 +580,32 @@ paths:
                         duration: "medium"
                       num_results: 5
                     recommendations:
-                    - boardgame:
-                        id: "68448"
-                        title: "7 Wonders"
-                        description: "Draft cards over three ages to build your civilization."
-                        mechanics: ["Card Drafting", "Set Collection"]
-                        genre: ["Strategy", "Civilization"]
-                        themes: ["Ancient"]
-                        min_players: 2
-                        max_players: 7
-                        complexity: 2.3
-                        age_recommendation: 10
-                        num_user_ratings: 250000
-                        avg_user_rating: 7.7
-                        year_published: 2010
-                        playing_time_minutes: 40
-                        image_url: "https://example.com/images/7-wonders.jpg"
-                        bgg_url: "https://boardgamegeek.com/boardgame/68448/7-wonders"
-                      explanation:
-                        type: "features"
-                        features:
-                          - label: "Fast card drafting"
-                            category: "mechanic"
-                          - label: "Plays up to 7 in ~40 minutes"
-                            category: "playtime"
-                          - label: "Light civilization tableau building"
-                            category: "genre"
+                      - boardgame:
+                          id: "68448"
+                          title: "7 Wonders"
+                          description: "Draft cards over three ages to build your civilization."
+                          mechanics: ["Card Drafting", "Set Collection"]
+                          genre: ["Strategy", "Civilization"]
+                          themes: ["Ancient"]
+                          min_players: 2
+                          max_players: 7
+                          complexity: 2.3
+                          age_recommendation: 10
+                          num_user_ratings: 250000
+                          avg_user_rating: 7.7
+                          year_published: 2010
+                          playing_time_minutes: 40
+                          image_url: "https://example.com/images/7-wonders.jpg"
+                          bgg_url: "https://boardgamegeek.com/boardgame/68448/7-wonders"
+                        explanation:
+                          type: "features"
+                          features:
+                            - label: "Fast card drafting"
+                              category: "mechanic"
+                            - label: "Plays up to 7 in ~40 minutes"
+                              category: "playtime"
+                            - label: "Light civilization tableau building"
+                              category: "genre"
                 reference_style_explanations:
                   summary: Previously created session (reference-style explanations)
                   value:

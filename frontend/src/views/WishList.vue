@@ -10,7 +10,7 @@ const router = useRouter()
 const reccommendationId = ref(getWishlist().keys().next().value || '')
 const recommendations = ref<Recommendation[]>(getRecommendationsForId(reccommendationId.value))
 
-const viewgame = (gameId: string) => {
+const viewgame = (gameId: number) => {
   router.push(`/game/${reccommendationId.value}/${gameId}`)
 }
 </script>

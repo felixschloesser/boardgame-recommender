@@ -1,6 +1,6 @@
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 
 from boardgames_api.domain.games.schemas import (
     BoardGameResponse,
@@ -17,9 +17,7 @@ router = APIRouter()
 def _build_boardgames_query(
     limit: int = Query(default=10, ge=1, le=100, description="Page size"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
-    genre: Optional[List[str]] = Query(
-        default=None, description="Filter by genre", alias="genre"
-    ),
+    genre: Optional[List[str]] = Query(default=None, description="Filter by genre", alias="genre"),
     mechanics: Optional[List[str]] = Query(
         default=None, description="Filter by mechanic", alias="mechanics"
     ),
@@ -75,10 +73,10 @@ def list_games(
     responses={404: {"model": ProblemDetailsResponse, "description": "Game not found."}},
 )
 def get_game(
-    bgg_id: int,
+    bgg_id: Annotated[str, Path(pattern=r"^[0-9]+$", description="BoardGameGeek game id")],
     db=Depends(db_session),
 ) -> BoardGameResponse:
     """
     Retrieve metadata for a specific boardgame by its BGG ID.
     """
-    return get_boardgame(bgg_id, db=db)
+    return get_boardgame(int(bgg_id), db=db)

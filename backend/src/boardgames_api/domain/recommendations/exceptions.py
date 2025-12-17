@@ -12,3 +12,7 @@ class RecommendationNotFoundError(Exception):
 
 class RecommendationUnauthorizedError(Exception):
     """Raised when a recommendation is requested by a different participant."""
+
+
+class BoardgameMetadataMissing(RecommendationUnavailableError):
+    """Raised when scored ids cannot be hydrated with boardgame metadata."""

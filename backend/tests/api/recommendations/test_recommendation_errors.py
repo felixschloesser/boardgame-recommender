@@ -21,9 +21,9 @@ class _FakeStore:
         return {int(cid): float(cid) for cid in candidate_ids}
 
 
-def _fake_game(game_id: int, *, min_players: int, max_players: int) -> BoardGameResponse:
+def _fake_game(game_id: int, min_players: int, max_players: int) -> BoardGameResponse:
     return BoardGameResponse(
-        id=str(game_id),
+        id=game_id,
         title=f"Game {game_id}",
         description="desc",
         mechanics=[],
@@ -54,12 +54,25 @@ def test_recommendation_returns_400_when_no_candidates(monkeypatch):
     session_resp = client.post("/api/auth/session", json={"participant_id": pid})
     assert session_resp.status_code == 200
 
+    class _FakeRecommender:
+        def recommend(self, liked_games, num_results):
+            return []
+
     monkeypatch.setattr(
         recommendation_service,
-        "_fetch_candidates",
-        lambda play_context, desired_results, db: [],
+        "generate_recommendations",
+        lambda request,
+        participant_id,
+        participant_repo,
+        recommendation_repo,
+        boardgame_repo,
+        recommender=_FakeRecommender(),
+        study_group_override=None: (_ for _ in ()).throw(
+            recommendation_service.RecommendationUnavailableError(
+                "No recommendations could be generated."
+            )
+        ),
     )
-    monkeypatch.setattr(recommendation_service, "get_embedding_index", lambda: _FakeStore())
 
     payload = {
         "liked_games": [1],
@@ -71,7 +84,7 @@ def test_recommendation_returns_400_when_no_candidates(monkeypatch):
         json=payload,
         cookies=session_resp.cookies,
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 503
     body = resp.json()
     detail = body.get("detail") if isinstance(body, dict) else ""
     assert "No recommendations" in str(detail)

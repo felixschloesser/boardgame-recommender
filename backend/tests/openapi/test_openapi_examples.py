@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from boardgames_api.app import app
 from boardgames_api.domain.recommendations.schemas import (
-    Recommendation,
     RecommendationRequest,
+    RecommendationResponse,
 )
 
 
@@ -29,4 +29,4 @@ def test_openapi_examples_validate_against_schemas() -> None:
     )
     for example in response_examples.values():
         payload = example.get("value")
-        Recommendation.model_validate(payload)
+        RecommendationResponse.model_validate(payload)

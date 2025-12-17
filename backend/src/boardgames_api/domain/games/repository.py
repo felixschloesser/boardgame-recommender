@@ -9,6 +9,7 @@ from sqlalchemy.sql import ColumnElement
 from boardgames_api.domain.games.filters import build_predicates
 from boardgames_api.domain.games.records import BoardgameRecord
 from boardgames_api.domain.games.schemas import BoardGameResponse
+from boardgames_api.domain.recommendations.schemas import PlayContextRequest
 
 # ---------------------------------------------------------------------------
 # Repository
@@ -86,9 +87,7 @@ class BoardgameRepository:
         if offset >= total:
             return total, []
 
-        rows = self.session.execute(
-            base_query.order_by(order_by).offset(offset).limit(limit)
-        )
+        rows = self.session.execute(base_query.order_by(order_by).offset(offset).limit(limit))
         records = list(rows.scalars())
 
         return total, records
@@ -103,12 +102,60 @@ class BoardgameRepository:
         """
         return self.session.get(BoardgameRecord, record_id)
 
+    def get_many(self, ids: List[int]) -> List[BoardgameRecord]:
+        if not ids:
+            return []
+        stmt = select(BoardgameRecord).where(BoardgameRecord.id.in_(ids))
+        rows = self.session.execute(stmt)
+        records = list(rows.scalars())
+        # Preserve requested order
+        record_map = {record.id: record for record in records}
+        return [record_map[i] for i in ids if i in record_map]
+
+    def filter_ids_for_context(
+        self,
+        play_context: PlayContextRequest,
+        candidate_ids: List[int],
+    ) -> List[int]:
+        """
+        Filter ranked candidate ids by play context, preserving input order.
+
+        Duration buckets:
+        - short: <= 45 mins
+        - medium: <= 90 mins
+        - long: <= 240 mins
+
+        Returns the subset of candidate_ids (in original order) that match the context.
+        """
+        if not candidate_ids:
+            return []
+        players = play_context.players
+        duration = play_context.duration
+        max_minutes = None
+        if duration is not None:
+            max_minutes = {
+                "short": 45,
+                "medium": 90,
+                "long": 240,
+            }.get(getattr(duration, "value", duration))
+
+        stmt = select(BoardgameRecord.id).where(BoardgameRecord.id.in_(candidate_ids))
+        if players is not None:
+            stmt = stmt.where(
+                BoardgameRecord.min_players <= players,
+                BoardgameRecord.max_players >= players,
+            )
+        if max_minutes is not None:
+            stmt = stmt.where(BoardgameRecord.playing_time_minutes <= max_minutes)
+        rows = self.session.execute(stmt)
+        matched_ids = {int(row[0]) for row in rows}
+        return [cid for cid in candidate_ids if cid in matched_ids]
+
     def list_for_play_context(
         self,
-        *,
         players: Optional[int],
         max_minutes: Optional[int],
-        limit: int,
+        limit: Optional[int],
     ) -> List[BoardgameRecord]:
         """
         Retrieve records filtered by player count and playing time.
@@ -121,7 +168,9 @@ class BoardgameRepository:
             )
         if max_minutes is not None:
             stmt = stmt.where(BoardgameRecord.playing_time_minutes <= max_minutes)
-        stmt = stmt.order_by(BoardgameRecord.id).limit(limit)
+        stmt = stmt.order_by(BoardgameRecord.id)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         rows = self.session.execute(stmt)
         return list(rows.scalars())
 

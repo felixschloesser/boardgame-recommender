@@ -1,5 +1,5 @@
 export default interface BoardGame {
-  id: string
+  id: number
   title: string
   description: string
   mechanics: string[]
@@ -18,6 +18,6 @@ export default interface BoardGame {
 }
 
 export interface Option {
-  id: string
+  id: number
   name: string
 }

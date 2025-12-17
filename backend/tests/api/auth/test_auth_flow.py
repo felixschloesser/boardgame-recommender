@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from boardgames_api.domain.games.schemas import BoardGameResponse
-
 from boardgames_api.domain.recommendations import service as recommendation_service
 
 from ...utils import assert_problem_details
@@ -54,41 +52,34 @@ def test_play_context_rejects_additional_properties(client, monkeypatch):
     class _FakeStore:
         run_identifier = "test"
 
-        def has_id(self, bgg_id: int) -> bool:
+        def has_id(self_id: int) -> bool:
             return True
 
         def score_candidates(self, liked_ids, candidate_ids):  # type: ignore[no-untyped-def]
             return {int(cid): 1.0 for cid in candidate_ids}
 
-        def get_name(self, bgg_id: int) -> str:
-            return f"Game {bgg_id}"
+        def get_name(self_id: int) -> str:
+            return f"Game {self_id}"
 
-    def _fake_game(game_id: int) -> BoardGameResponse:
-        return BoardGameResponse(
-            id=str(game_id),
-            title=f"Game {game_id}",
-            description="desc",
-            mechanics=[],
-            genre=[],
-            themes=[],
-            min_players=1,
-            max_players=4,
-            complexity=1.0,
-            age_recommendation=8,
-            num_user_ratings=0,
-            avg_user_rating=0.0,
-            year_published=2020,
-            playing_time_minutes=30,
-            image_url="http://example.com",
-            bgg_url="http://example.com",
-        )
+    class _StubBoardgameRepo:
+        def games_for_context(self, play_context, desired_results):
+            return [{"id": 1}]
+
+    class _FakeRecommender:
+        def recommend(self, liked_games, num_results):
+            return []
 
     monkeypatch.setattr(
         recommendation_service,
-        "_fetch_candidates",
-        lambda play_context, desired_results, db, bgg: [_fake_game(1)],
+        "generate_recommendations",
+        lambda request,
+        participant_id,
+        participant_repo,
+        recommendation_repo,
+        boardgame_repo,
+        recommender=_FakeRecommender(),
+        study_group_override=None: None,
     )
-    monkeypatch.setattr(recommendation_service, "get_embedding_index", lambda: _FakeStore())
 
     payload = {
         "liked_games": [1],

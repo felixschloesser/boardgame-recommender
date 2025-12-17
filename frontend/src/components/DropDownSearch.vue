@@ -29,7 +29,9 @@ const filteredOptions = computed(() => {
       (option) =>
         !filter ||
         option.name?.toLowerCase().includes(filter) ||
-        option.id?.toLowerCase().includes(filter),
+        (option.id !== undefined && option.id !== null
+          ? String(option.id).toLowerCase().includes(filter)
+          : false),
     )
     .slice(0, props.maxItems)
 })
