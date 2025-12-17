@@ -15,6 +15,7 @@ from boardgames_api.domain.recommendations import routes as recommendation_route
 from boardgames_api.http.errors.handlers import register_exception_handlers
 from boardgames_api.http.router import router as api_router
 from boardgames_api.infrastructure.database import ensure_seeded, init_db
+from boardgames_api.infrastructure.embeddings import load_embedding
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR.parent / "static"
@@ -40,6 +41,11 @@ async def lifespan(_: FastAPI):
     else:
         logger.info("RECOMMENDATION_OVERRIDE inactive")
     log_bgg_status(logger)
+    try:
+        load_embedding()
+    except Exception as exc:  # pragma: no cover - startup path
+        logger.error("Failed to load embeddings at startup: %s", exc)
+        raise
     yield
 
 

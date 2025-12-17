@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,11 +9,16 @@ from typing import Optional
 import numpy as np
 import polars as pl
 
+from boardgames_api.infrastructure import database
+
 DEFAULT_EMBEDDINGS_DIR = Path(__file__).resolve().parents[4] / "data" / "embeddings"
 DEFAULT_EMBEDDING_RUN = os.getenv("BOARDGAMES_EMBEDDING_RUN")
 DEFAULT_EMBEDDINGS_DIR = Path(
     os.getenv("BOARDGAMES_EMBEDDINGS_DIR", DEFAULT_EMBEDDINGS_DIR)
 ).resolve()
+
+logger = logging.getLogger("uvicorn.error")
+_EMBEDDING_CACHE: dict[str, "Embeddings"] = {}
 
 
 @dataclass
@@ -41,8 +47,11 @@ def _find_latest_run(embeddings_dir: Path) -> str:
 
 
 def load_embedding(run_id: Optional[str] = None, use_cache: bool = True) -> Embeddings:
+    cache = _EMBEDDING_CACHE if isinstance(_EMBEDDING_CACHE, dict) else {}
     embeddings_dir = DEFAULT_EMBEDDINGS_DIR
     run = run_id or DEFAULT_EMBEDDING_RUN or _find_latest_run(embeddings_dir)
+    if use_cache and run in cache:
+        return cache[run]
     vectors_path = embeddings_dir / run / "vectors.parquet"
     if not vectors_path.exists():
         raise FileNotFoundError(f"Embedding vectors not found at {vectors_path}")
@@ -61,10 +70,27 @@ def load_embedding(run_id: Optional[str] = None, use_cache: bool = True) -> Embe
     )
     name_lookup = {int(i): n for i, n in zip(names.get("bgg_id", []), names.get("name", []))}
 
-    return Embeddings(
+    embedding = Embeddings(
         run_identifier=run,
         bgg_ids=bgg_ids,
         vectors=vectors,
         norms=norms,
         names=name_lookup,
     )
+    if use_cache:
+        cache[run] = embedding
+        # keep shared reference in case a test monkeypatched the name
+        globals()["_EMBEDDING_CACHE"] = cache
+    rows = embedding.bgg_ids.size
+    dims = embedding.vectors.shape[1] if embedding.vectors.ndim > 1 else 0
+    snapshot = getattr(database, "LAST_DATASET_SNAPSHOT", None)
+    dataset_run = snapshot.get("run") if isinstance(snapshot, dict) else None
+    dataset_rows = snapshot.get("db_rows") if isinstance(snapshot, dict) else None
+    message = "EMBEDDING ready run=%s rows=%d dims=%d" % (run, rows, dims)
+    if dataset_run:
+        message += " dataset_run=%s" % dataset_run
+    if dataset_rows is not None and dataset_rows != rows:
+        logger.warning("%s warn=mismatch dataset_rows=%s", message, dataset_rows)
+    else:
+        logger.info(message)
+    return embedding

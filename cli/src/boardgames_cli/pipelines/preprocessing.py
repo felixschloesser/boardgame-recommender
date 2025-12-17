@@ -28,6 +28,7 @@ _COLUMN_RENAMING = {
     "Description": "description",
     "YearPublished": "year_published",
     "AvgRating": "avg_rating",
+    "NumOwned": "num_owned",
     "MinPlayers": "min_players",
     "MaxPlayers": "max_players",
     "ComMaxPlaytime": "community_max_playtime",
@@ -40,9 +41,7 @@ _COLUMN_RENAMING = {
 
 
 class _SynonymNormalizer:
-    def __init__(
-        self, config: TokenizationConfig, synonyms: dict[str, list[str]] | None
-    ) -> None:
+    def __init__(self, config: TokenizationConfig, synonyms: dict[str, list[str]] | None) -> None:
         self._enabled = config.unify_synonyms and bool(synonyms)
         self._patterns: list[tuple[re.Pattern[str], str]] = []
         if not self._enabled or not synonyms:
@@ -93,18 +92,14 @@ def preprocess_data(
         games = _load_games(directory)
         categories = _extract_category_flags(games)
         mechanics = _load_tag_table(directory / "mechanics.csv", "mechanics")
-        subcategories = _load_tag_table(
-            directory / "subcategories.csv", "subcategories"
-        )
+        subcategories = _load_tag_table(directory / "subcategories.csv", "subcategories")
         themes = _load_tag_table(directory / "themes.csv", "themes")
         progress.update(1)
 
         if show_progress:
             logger.info("Enriching dataset with supplementary tags")
         enriched = (
-            games.drop(
-                [column for column in games.columns if column.startswith("cat_")]
-            )
+            games.drop([column for column in games.columns if column.startswith("cat_")])
             .join(categories, on="bgg_id", how="left")
             .join(subcategories, on="bgg_id", how="left")
             .join(mechanics, on="bgg_id", how="left")
@@ -166,9 +161,7 @@ def _load_games(directory: Path) -> pl.DataFrame:
     games = _read_csv(directory / "games.csv")
     missing = [column for column in _COLUMN_RENAMING if column not in games.columns]
     if missing:
-        raise ValueError(
-            "games.csv missing required columns: " + ", ".join(sorted(missing))
-        )
+        raise ValueError("games.csv missing required columns: " + ", ".join(sorted(missing)))
     renamed = games.rename(_COLUMN_RENAMING)
     category_columns = [column for column in games.columns if column.startswith("Cat:")]
     rename_categories = {
@@ -182,7 +175,14 @@ def _load_games(directory: Path) -> pl.DataFrame:
 def _extract_category_flags(frame: pl.DataFrame) -> pl.DataFrame:
     category_columns = [column for column in frame.columns if column.startswith("cat_")]
     if not category_columns:
-        return pl.DataFrame({"bgg_id": [], "categories": []})
+        # Keep schema aligned with primary table to avoid join type mismatches.
+        bgg_dtype = frame.schema.get("bgg_id", pl.Int64)
+        return pl.DataFrame(
+            {
+                "bgg_id": pl.Series([], dtype=bgg_dtype),
+                "categories": pl.Series([], dtype=pl.Utf8),
+            }
+        )
     melted = frame.select(["bgg_id", *category_columns]).unpivot(
         index="bgg_id",
         on=category_columns,
@@ -228,8 +228,7 @@ def _apply_filters(
         # Very new titles rarely have stable rating signals yet.
         before = current.height
         current = current.filter(
-            pl.col("year_published").is_null()
-            | (pl.col("year_published") <= filters.max_year)
+            pl.col("year_published").is_null() | (pl.col("year_published") <= filters.max_year)
         )
         report.append(
             {
@@ -266,22 +265,34 @@ def _apply_filters(
         )
 
     if filters.min_avg_rating:
-        before = current.height
-        current = current.filter(pl.col("avg_rating") >= filters.min_avg_rating)
-        report.append(
-            {
-                "name": "min_avg_rating",
-                "value": filters.min_avg_rating,
-                "before_rows": before,
-                "after_rows": current.height,
-                "removed": before - current.height,
-            }
+        popularity_override_expr, popularity_details = _popularity_override(current, filters)
+        effective_override_expr = (
+            popularity_override_expr if popularity_override_expr is not None else pl.lit(False)
         )
+        kept_by_override = current.filter(
+            (pl.col("avg_rating") < filters.min_avg_rating) & effective_override_expr
+        ).height
+        before = current.height
+        current = current.filter(
+            (pl.col("avg_rating") >= filters.min_avg_rating) | effective_override_expr
+        )
+        entry: dict[str, Any] = {
+            "name": "min_avg_rating",
+            "value": filters.min_avg_rating,
+            "before_rows": before,
+            "after_rows": current.height,
+            "removed": before - current.height,
+        }
+        if popularity_override_expr is not None:
+            entry["popularity_override"] = {
+                **popularity_details,
+                "kept_by_override": kept_by_override,
+            }
+        report.append(entry)
 
     before = current.height
     current = current.filter(
-        pl.col("min_players").is_null()
-        | (pl.col("min_players") <= filters.max_required_players)
+        pl.col("min_players").is_null() | (pl.col("min_players") <= filters.max_required_players)
     )
     report.append(
         {
@@ -308,6 +319,46 @@ def _apply_filters(
         }
     )
     return current, report
+
+
+def _popularity_override(
+    frame: pl.DataFrame, filters: PreprocessingFilters
+) -> tuple[pl.Expr | None, dict[str, Any]]:
+    expressions: list[pl.Expr] = []
+    details: dict[str, Any] = {}
+
+    if filters.popularity_override_min_num_ratings > 0:
+        if "num_user_ratings" not in frame.columns:
+            logger.warning(
+                "num_user_ratings column missing; popularity override by ratings will be skipped"
+            )
+        else:
+            expressions.append(
+                pl.col("num_user_ratings").fill_null(0)
+                >= filters.popularity_override_min_num_ratings
+            )
+            details["min_num_user_ratings"] = filters.popularity_override_min_num_ratings
+
+    if filters.popularity_override_top_owned_quantile > 0.0:
+        if "num_owned" not in frame.columns:
+            logger.warning(
+                "num_owned column missing; popularity override by ownership will be skipped"
+            )
+        else:
+            threshold_series = frame.select(
+                pl.col("num_owned")
+                .fill_null(0)
+                .cast(pl.Float64)
+                .quantile(filters.popularity_override_top_owned_quantile)
+            )
+            owned_threshold = float(threshold_series.item()) if threshold_series.height else 0.0
+            expressions.append(pl.col("num_owned").fill_null(0) >= owned_threshold)
+            details["owned_quantile"] = filters.popularity_override_top_owned_quantile
+            details["owned_threshold"] = owned_threshold
+
+    if not expressions:
+        return None, details
+    return pl.any_horizontal(expressions), details
 
 
 def _build_quality_report(
@@ -345,9 +396,7 @@ def _build_quality_report(
         for name in config.features.numeric
         if name in filtered.columns
     }
-    token_columns = [
-        f"text_{name}_tokens" for name in config.features.text
-    ]
+    token_columns = [f"text_{name}_tokens" for name in config.features.text]
     token_coverage = {
         name: _summarize_text_column(features, name)
         for name in token_columns
@@ -355,9 +404,7 @@ def _build_quality_report(
     }
 
     duplicates = (
-        raw_games.select(pl.col("BGGId").is_duplicated().sum())
-        .to_series()
-        .item()
+        raw_games.select(pl.col("BGGId").is_duplicated().sum()).to_series().item()
         if "BGGId" in raw_games.columns
         else 0
     )
@@ -392,9 +439,7 @@ def _assemble_feature_table(
     token_config = config.tokenization
     normalizer = _SynonymNormalizer(token_config, synonyms)
     text_columns = _materialize_text_columns(frame, config.features.text)
-    categorical_columns = _materialize_categorical_columns(
-        frame, config.features.categorical
-    )
+    categorical_columns = _materialize_categorical_columns(frame, config.features.categorical)
     # Keep original text columns (e.g., description) intact; emit tokenized text into
     # separate text_*_tokens columns only.
     numeric_columns = config.features.numeric
@@ -423,10 +468,7 @@ def _assemble_feature_table(
         normalizer=normalizer,
     )
     text_exprs = [
-        pl.col(source)
-        .fill_null("")
-        .map_elements(tokenizer, return_dtype=pl.String)
-        .alias(column)
+        pl.col(source).fill_null("").map_elements(tokenizer, return_dtype=pl.String).alias(column)
         for source, column in text_columns.items()
     ]
 
@@ -462,9 +504,7 @@ def _assemble_feature_table(
     return working.select(columns_to_select)
 
 
-def _materialize_text_columns(
-    frame: pl.DataFrame, names: Iterable[str]
-) -> dict[str, str]:
+def _materialize_text_columns(frame: pl.DataFrame, names: Iterable[str]) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for name in names:
         if name not in frame.columns:
@@ -473,15 +513,11 @@ def _materialize_text_columns(
     return mapping
 
 
-def _materialize_categorical_columns(
-    frame: pl.DataFrame, names: Iterable[str]
-) -> dict[str, str]:
+def _materialize_categorical_columns(frame: pl.DataFrame, names: Iterable[str]) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for name in names:
         if name not in frame.columns:
-            raise ValueError(
-                f"Missing categorical column '{name}' in preprocessed dataset"
-            )
+            raise ValueError(f"Missing categorical column '{name}' in preprocessed dataset")
         mapping[name] = f"cat_{name}"
     return mapping
 
@@ -495,12 +531,7 @@ def _summarize_text_column(frame: pl.DataFrame, column: str) -> dict[str, float]
             "p95_length": 0.0,
         }
     lengths_series = frame.select(
-        pl.col(column)
-        .cast(pl.Utf8)
-        .fill_null("")
-        .str.strip_chars()
-        .str.len_chars()
-        .alias("length")
+        pl.col(column).cast(pl.Utf8).fill_null("").str.strip_chars().str.len_chars().alias("length")
     ).to_series()
     non_empty = int((lengths_series > 0).sum())
     mean_val = lengths_series.mean()
@@ -515,17 +546,12 @@ def _summarize_text_column(frame: pl.DataFrame, column: str) -> dict[str, float]
     }
 
 
-def _summarize_categorical_column(
-    frame: pl.DataFrame, column: str
-) -> dict[str, float]:
+def _summarize_categorical_column(frame: pl.DataFrame, column: str) -> dict[str, float]:
     if frame.is_empty():
         return {"non_empty": 0, "coverage": 0.0, "distinct": 0}
-    values = (
-        frame.select(
-            pl.col(column).cast(pl.Utf8).fill_null("").str.strip_chars().alias("value")
-        )
-        .to_series()
-    )
+    values = frame.select(
+        pl.col(column).cast(pl.Utf8).fill_null("").str.strip_chars().alias("value")
+    ).to_series()
     non_empty = int((values.str.len_chars() > 0).sum())
     distinct = int(values.filter(values.str.len_chars() > 0).n_unique())
     return {
@@ -548,14 +574,8 @@ def _numeric_expressions(
             pl.col(name).std(ddof=0).alias("std"),
         ).row(0)
         median, std = stats
-        center = (
-            float(median)
-            if median is not None and not math.isnan(float(median))
-            else 0.0
-        )
-        scale = (
-            float(std) if std not in (None, 0.0) and not math.isnan(float(std)) else 1.0
-        )
+        center = float(median) if median is not None and not math.isnan(float(median)) else 0.0
+        scale = float(std) if std not in (None, 0.0) and not math.isnan(float(std)) else 1.0
         expressions.append(
             ((pl.col(name).cast(pl.Float64).fill_null(center) - center) / scale).alias(
                 f"num_{name}"
@@ -573,15 +593,12 @@ def _summarize_numeric_column(frame: pl.DataFrame, column: str) -> dict[str, flo
             "max": 0.0,
             "median": 0.0,
         }
-    stats = (
-        frame.select(
-            pl.col(column).is_not_null().sum().alias("non_null"),
-            pl.col(column).min().alias("min"),
-            pl.col(column).max().alias("max"),
-            pl.col(column).median().alias("median"),
-        )
-        .row(0)
-    )
+    stats = frame.select(
+        pl.col(column).is_not_null().sum().alias("non_null"),
+        pl.col(column).min().alias("min"),
+        pl.col(column).max().alias("max"),
+        pl.col(column).median().alias("median"),
+    ).row(0)
     non_null, minimum, maximum, median = stats
     non_null = int(non_null or 0)
     return {
@@ -635,8 +652,7 @@ def _tokenize_text(
         ngrams.extend(tokens)
     for size in range(max(2, min_n), max_n + 1):
         ngrams.extend(
-            " ".join(tokens[index : index + size])
-            for index in range(0, len(tokens) - size + 1)
+            " ".join(tokens[index : index + size]) for index in range(0, len(tokens) - size + 1)
         )
     # Capture distinctive mechanics phrases so embeddings stay interpretable.
     return " ".join(ngrams)

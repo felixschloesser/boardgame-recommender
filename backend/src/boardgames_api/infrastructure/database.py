@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -21,7 +22,9 @@ DEFAULT_PARQUET_PATH = Path(
 ).resolve()
 MIN_BOARDGAMES_COUNT = 1000
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
+DATA_VERSION = DEFAULT_PARQUET_PATH.parent.name
+LAST_DATASET_SNAPSHOT: dict[str, object] | None = None
 
 
 class Base(DeclarativeBase):
@@ -160,7 +163,48 @@ def seed_boardgames_from_parquet(
 
     if not records:
         raise RuntimeError("No valid boardgame records were loaded from parquet")
+    if skipped:
+        logger.warning("Seed skipped %d rows with invalid data; dataset may be incomplete", skipped)
     return len(records)
+
+
+def _parquet_is_newer(db_path: Path, parquet_path: Path) -> bool:
+    """
+    Return True if the parquet file is newer than the DB (or the DB is missing).
+    """
+    try:
+        parquet_mtime = parquet_path.stat().st_mtime
+    except FileNotFoundError:
+        return False
+    try:
+        db_mtime = db_path.stat().st_mtime
+    except FileNotFoundError:
+        return True
+    return parquet_mtime > db_mtime
+
+
+def _fmt_mtime(path: Path) -> str:
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+    except FileNotFoundError:
+        return "missing"
+
+
+def _parquet_version(parquet_path: Path) -> str:
+    # Use parent dir name as version if present, else filename stem.
+    parent = parquet_path.parent.name
+    if parent and parent not in ("processed", ""):
+        return parent
+    return parquet_path.stem
+
+
+def _parquet_rows(parquet_path: Path) -> int:
+    if not parquet_path.exists():
+        return 0
+    try:
+        return pl.scan_parquet(parquet_path).select(pl.len()).collect().item()
+    except Exception:
+        return 0
 
 
 def ensure_seeded() -> None:
@@ -174,16 +218,48 @@ def ensure_seeded() -> None:
         from boardgames_api.domain.games.records import BoardgameRecord
 
         count = session.scalar(select(func.count(BoardgameRecord.id))) or 0
-        if count >= MIN_BOARDGAMES_COUNT and not _boardgames_invalid(session):
+        parquet_rows = _parquet_rows(DEFAULT_PARQUET_PATH)
+        stale = _parquet_is_newer(DEFAULT_DB_PATH, DEFAULT_PARQUET_PATH) or (
+            parquet_rows and parquet_rows > count
+        )
+        parquet_run = _parquet_version(DEFAULT_PARQUET_PATH)
+        if count >= MIN_BOARDGAMES_COUNT and not _boardgames_invalid(session) and not stale:
+            message = "DATASET ready run=%s db_rows=%d parquet_rows=%d db=%s parquet=%s" % (
+                parquet_run,
+                count,
+                parquet_rows,
+                _fmt_mtime(DEFAULT_DB_PATH),
+                _fmt_mtime(DEFAULT_PARQUET_PATH),
+            )
+            if parquet_rows and count != parquet_rows:
+                logger.warning("%s warn=mismatch", message)
+            else:
+                logger.info(message)
+            globals()["LAST_DATASET_SNAPSHOT"] = {
+                "run": parquet_run,
+                "db_rows": count,
+                "parquet_rows": parquet_rows,
+                "db_mtime": _fmt_mtime(DEFAULT_DB_PATH),
+                "parquet_mtime": _fmt_mtime(DEFAULT_PARQUET_PATH),
+            }
             return
 
-    seeded = seed_boardgames_from_parquet()
+    if _parquet_is_newer(DEFAULT_DB_PATH, DEFAULT_PARQUET_PATH):
+        logger.info(
+            "Reseeding boardgames because parquet (%s) is newer than DB (%s)",
+            DEFAULT_PARQUET_PATH,
+            DEFAULT_DB_PATH,
+        )
+
+    seeded = seed_boardgames_from_parquet(parquet_path=DEFAULT_PARQUET_PATH)
 
     with Session(engine) as session:
         from boardgames_api.domain.games.records import BoardgameRecord
 
         count = session.scalar(select(func.count(BoardgameRecord.id))) or 0
         invalid = _boardgames_invalid(session)
+    parquet_rows = _parquet_rows(DEFAULT_PARQUET_PATH)
+    parquet_run = _parquet_version(DEFAULT_PARQUET_PATH)
 
     if count < MIN_BOARDGAMES_COUNT or invalid:
         parquet_hint = (
@@ -198,6 +274,20 @@ def ensure_seeded() -> None:
         raise RuntimeError(
             f"Boardgame catalog not seeded properly (loaded {seeded} rows). {parquet_hint}"
         )
+    logger.info(
+        "DATASET seeded run=%s db_rows=%d parquet_rows=%d parquet=%s",
+        parquet_run,
+        count,
+        parquet_rows,
+        _fmt_mtime(DEFAULT_PARQUET_PATH),
+    )
+    globals()["LAST_DATASET_SNAPSHOT"] = {
+        "run": parquet_run,
+        "db_rows": count,
+        "parquet_rows": parquet_rows,
+        "db_mtime": _fmt_mtime(DEFAULT_DB_PATH),
+        "parquet_mtime": _fmt_mtime(DEFAULT_PARQUET_PATH),
+    }
 
 
 def _boardgames_invalid(session: Session) -> bool:

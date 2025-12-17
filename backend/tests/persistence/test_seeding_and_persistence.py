@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -89,7 +91,7 @@ def test_seed_skips_invalid_rows(monkeypatch, tmp_path: Path, temp_db: Path) -> 
         min_age = session.scalar(select(func.min(BoardgameRecord.age_recommendation)))
         min_min_players = session.scalar(select(func.min(BoardgameRecord.min_players)))
 
-    assert total == 1
+    assert total == 2  # invalid row is clamped instead of dropped
     assert min_complexity is None or min_complexity >= 0
     assert min_age is None or min_age >= 0
     assert min_min_players is None or min_min_players >= 1
@@ -104,6 +106,63 @@ def test_seed_no_parquet_is_noop(monkeypatch, tmp_path: Path, temp_db: Path) -> 
     missing = tmp_path / "does-not-exist.parquet"
     loaded = database.seed_boardgames_from_parquet(parquet_path=missing)
     assert loaded == 0
+
+
+def test_reseeds_when_parquet_is_newer(monkeypatch, tmp_path: Path) -> None:
+    """
+    If the processed dataset is newer than the SQLite DB, ensure_seeded should reseed.
+    """
+    db_path = tmp_path / "app.sqlite3"
+    parquet_path = tmp_path / "games.parquet"
+
+    # Point defaults at our temp files and drop the minimum row constraint.
+    monkeypatch.setattr(database, "DEFAULT_DB_PATH", db_path, raising=False)
+    monkeypatch.setattr(database, "DEFAULT_PARQUET_PATH", parquet_path, raising=False)
+    monkeypatch.setattr(database, "MIN_BOARDGAMES_COUNT", 1, raising=False)
+    monkeypatch.setattr(database, "_engine", None, raising=False)
+    monkeypatch.setattr(database, "SessionLocal", None, raising=False)
+
+    def _write_parquet(title: str, bgg_id: int = 1) -> None:
+        df = pl.DataFrame(
+            {
+                "bgg_id": [bgg_id],
+                "name": [title],
+                "description": ["desc"],
+                "cat_mechanics": [["dice"]],
+                "cat_categories": [["family"]],
+                "cat_themes": [["classic"]],
+                "min_players": [2],
+                "max_players": [4],
+                "num_complexity": [1.5],
+                "num_age_recommendation": [8],
+                "num_user_ratings": [100],
+                "avg_rating": [6.5],
+                "num_year_published": [1990],
+                "playing_time_minutes": [30],
+            }
+        )
+        df.write_parquet(parquet_path)
+
+    # Seed with initial parquet
+    _write_parquet("Old Game", 1)
+    database.ensure_seeded()
+    with database.session_scope() as session:
+        count = session.scalar(select(func.count(BoardgameRecord.id)))
+        title = session.scalar(select(BoardgameRecord.title))
+        assert count == 1
+        assert title == "Old Game"
+
+    # Make parquet newer with updated data
+    time.sleep(1)
+    _write_parquet("New Game", 2)
+    os.utime(parquet_path, None)
+
+    database.ensure_seeded()
+    with database.session_scope() as session:
+        titles = session.scalars(select(BoardgameRecord.title)).all()
+        ids = session.scalars(select(BoardgameRecord.id)).all()
+        assert titles == ["New Game"]
+        assert ids == [2]
 
 
 def test_recommendation_round_trip_persists_explanations(temp_db: Path) -> None:

@@ -13,6 +13,8 @@ embeddings_directory = "data/embeddings"
 max_year = 2020                 # Exclude very new games lacking enough ratings
 min_popularity_quantile = 0.30  # Drop the least popular 30% of games
 min_avg_rating = 5.0            # Drop very poorly rated games
+popularity_override_min_num_ratings = 10000   # Keep massively popular titles even if low-rated
+popularity_override_top_owned_quantile = 0.95 # Keep top 5% most-owned titles even if low-rated
 max_required_players = 6        # Drop games that require 6+ players
 max_playing_time_minutes = 210  # Drop extremely long games
 

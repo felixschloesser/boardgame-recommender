@@ -39,6 +39,8 @@ class PreprocessingFilters(BaseModel):
     max_year: Optional[int]
     min_popularity_quantile: float = Field(ge=0.0, le=1.0)
     min_avg_rating: float
+    popularity_override_min_num_ratings: int = Field(default=0, ge=0)
+    popularity_override_top_owned_quantile: float = Field(default=0.0, ge=0.0, le=1.0)
     max_required_players: int
     max_playing_time_minutes: int
 
@@ -156,13 +158,9 @@ class Config(BaseModel):
         base = path_obj.parents[1].resolve()
 
         # correct property names to match TOML
-        config.paths.stopwords_file = cls._resolve_path(
-            base, config.paths.stopwords_file
-        )
+        config.paths.stopwords_file = cls._resolve_path(base, config.paths.stopwords_file)
         config.paths.synonyms_file = cls._resolve_path(base, config.paths.synonyms_file)
-        config.paths.raw_data_directory = cls._resolve_path(
-            base, config.paths.raw_data_directory
-        )
+        config.paths.raw_data_directory = cls._resolve_path(base, config.paths.raw_data_directory)
         config.paths.processed_features_directory = cls._resolve_path(
             base, config.paths.processed_features_directory
         )

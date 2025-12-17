@@ -109,35 +109,6 @@ class BoardgameSeedRow(BaseModel):
 def row_to_record(row: dict[str, Any]):
     from boardgames_api.domain.games.records import BoardgameRecord
 
-    # Validate raw inputs before normalization/clamping.
-    raw_min = row.get("min_players")
-    raw_max = row.get("max_players")
-    raw_complexity = row.get("complexity", row.get("num_complexity"))
-    raw_age = row.get("age_recommendation", row.get("num_age_recommendation"))
-    raw_playtime = row.get("playing_time_minutes")
-
-    def _as_float(val: Any) -> float | None:
-        try:
-            return float(val)
-        except Exception:
-            return None
-
-    min_val = _as_float(raw_min) if raw_min is not None else None
-    if min_val is not None and min_val < 1:
-        raise ValueError("min_players must be >= 1")
-    max_val = _as_float(raw_max) if raw_max is not None else None
-    if max_val is not None and max_val < 1:
-        raise ValueError("max_players must be >= 1")
-    complexity_val = _as_float(raw_complexity) if raw_complexity is not None else None
-    if complexity_val is not None and complexity_val < 0:
-        raise ValueError("complexity must be >= 0")
-    age_val = _as_float(raw_age) if raw_age is not None else None
-    if age_val is not None and age_val < 0:
-        raise ValueError("age_recommendation must be >= 0")
-    playtime_val = _as_float(raw_playtime) if raw_playtime is not None else None
-    if playtime_val is not None and playtime_val < 1:
-        raise ValueError("playing_time_minutes must be >= 1")
-
     seed = BoardgameSeedRow.model_validate(row)
 
     description = ""

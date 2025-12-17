@@ -70,6 +70,7 @@ def test_preprocess_data_generates_feature_table(tmp_path):
         "NumUserRatings": [500, 400],
         "GameWeight": [2.5, 2.0],
         "ComAgeRec": [10, 8],
+        "NumOwned": [1000, 2000],
         "Cat: Strategy": [1, 0],
         "Cat: Family": [0, 1],
     }
@@ -139,3 +140,73 @@ def test_preprocess_data_errors_when_games_missing(tmp_path):
             config=config,
             synonyms=None,
         )
+
+
+def test_popularity_override_keeps_low_rated_hits(tmp_path):
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    games = {
+        "BGGId": [1, 2, 3, 4],
+        "Name": ["Classic", "Cult Classic", "Obscure", "Modern Gem"],
+        "Description": ["", "", "", ""],
+        "YearPublished": [1950, 1990, 2005, 2021],
+        "AvgRating": [4.0, 4.3, 4.1, 7.2],
+        "MinPlayers": [2, 2, 2, 1],
+        "MaxPlayers": [6, 4, 4, 4],
+        "ComMaxPlaytime": [90, 60, 45, 60],
+        "ComMinPlaytime": [60, 45, 30, 45],
+        "MfgPlaytime": [120, 60, 60, 60],
+        "NumUserRatings": [20000, 500, 500, 1200],
+        "GameWeight": [1.5, 2.0, 2.0, 2.5],
+        "ComAgeRec": [8, 10, 12, 10],
+        "NumOwned": [50000, 60000, 50, 5000],
+    }
+    mechanics = {
+        "BGGId": [1, 2, 3, 4],
+        "Roll": [1, 0, 0, 0],
+        "Trade": [0, 1, 0, 0],
+        "Bluff": [0, 0, 1, 0],
+        "Co-op": [0, 0, 0, 1],
+    }
+    subcategories = {
+        "BGGId": [1, 2, 3, 4],
+        "Family": [1, 1, 0, 0],
+        "Card": [0, 0, 1, 0],
+        "Strategy": [0, 0, 0, 1],
+    }
+    themes = {
+        "BGGId": [1, 2, 3, 4],
+        "Classic": [1, 1, 0, 0],
+        "Niche": [0, 0, 1, 0],
+        "Modern": [0, 0, 0, 1],
+    }
+
+    _write_csv(raw_dir / "games.csv", games)
+    _write_csv(raw_dir / "mechanics.csv", mechanics)
+    _write_csv(raw_dir / "subcategories.csv", subcategories)
+    _write_csv(raw_dir / "themes.csv", themes)
+
+    config = _basic_preprocessing_config()
+    config.filters.min_avg_rating = 6.0
+    config.filters.popularity_override_min_num_ratings = 10000
+    config.filters.popularity_override_top_owned_quantile = 0.5
+    config.filters.min_popularity_quantile = 0.0
+
+    features, report = preprocess_data(
+        directory=raw_dir,
+        stopwords=set(),
+        config=config,
+        synonyms=None,
+    )
+
+    assert set(features["name"].to_list()) == {
+        "Classic",
+        "Cult Classic",
+        "Modern Gem",
+    }
+
+    report_by_name = {entry["name"]: entry for entry in report["filters"]}
+    override = report_by_name["min_avg_rating"]["popularity_override"]
+    assert override["kept_by_override"] == 2
+    assert override["min_num_user_ratings"] == 10000
