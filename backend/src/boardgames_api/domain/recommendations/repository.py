@@ -34,6 +34,7 @@ class RecommendationRepository:
         selections = result.selections or []
         fetch_enabled = os.getenv("BGG_FETCH_ENABLED", "1").lower() not in {"0", "false", "no"}
         access_token = os.getenv("BGG_ACCESS_TOKEN")
+        durations: list[int] = []
         if selections and fetch_enabled and access_token:
             workers = min(8, len(selections))
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -44,10 +45,26 @@ class RecommendationRepository:
                 for future in as_completed(future_map):
                     bgg_id = future_map[future]
                     try:
-                        metadata_map[bgg_id] = future.result()
+                        metadata, ms = future.result()
+                        metadata_map[bgg_id] = metadata
+                        if ms is not None:
+                            durations.append(ms)
                     except Exception as exc:  # pragma: no cover
                         logger.warning("Parallel BGG fetch failed for %s: %s", bgg_id, exc)
                         metadata_map[bgg_id] = None
+            if durations:
+                durations_sorted = sorted(durations)
+                total = len(durations_sorted)
+                slow_count = sum(1 for ms in durations_sorted if ms >= 2000)
+                p95_index = max(0, min(total - 1, int(total * 0.95) - 1))
+                logger.info(
+                    "BGG batch summary rec_id=%s total=%d slow=%d p95_ms=%d max_ms=%d",
+                    result.id,
+                    total,
+                    slow_count,
+                    durations_sorted[p95_index] if durations_sorted else 0,
+                    durations_sorted[-1] if durations_sorted else 0,
+                )
 
         record = RecommendationRecord(
             id=result.id,

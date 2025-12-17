@@ -19,6 +19,7 @@ logger = logging.getLogger("uvicorn.error")
 BGG_ACCESS_TOKEN = os.getenv("BGG_ACCESS_TOKEN")
 FETCH_ENABLED = os.getenv("BGG_FETCH_ENABLED", "1").lower() not in {"0", "false", "no"}
 TTL = int(os.getenv("BGG_METADATA_TTL_SECONDS", str(60 * 60 * 24 * 7)))
+SLOW_MS = int(os.getenv("BGG_SLOW_MS", "2000"))
 
 
 @dataclass
@@ -120,28 +121,43 @@ class BggMetadataFetcher:
     def _fetch_from_bgg(self, bgg_id: int) -> Optional[BggMetadata]:
         if not self._client:
             return None
+        start = datetime.now(timezone.utc)
         try:
-            logger.info("BGG request start bgg_id=%s", bgg_id, extra={"bgg_id": bgg_id})
             game = self._client.game(game_id=bgg_id)
-        except (BGGApiTimeoutError, BGGApiError) as exc:
-            logger.warning("BGG fetch timed out for %s: %s", bgg_id, exc)
+        except (BGGApiTimeoutError, BGGApiError):
+            elapsed_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+            logger.warning(
+                "BGG fetch failed bgg_id=%s status=timeout ms=%s",
+                bgg_id,
+                elapsed_ms,
+                extra={"bgg_id": bgg_id, "ms": elapsed_ms, "status": "timeout"},
+            )
             return None
         except BGGError as exc:
-            logger.warning("BGG fetch failed for %s: %s", bgg_id, exc)
+            elapsed_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+            logger.warning(
+                "BGG fetch failed bgg_id=%s status=error ms=%s err=%s",
+                bgg_id,
+                elapsed_ms,
+                exc,
+                extra={"bgg_id": bgg_id, "ms": elapsed_ms, "status": "error"},
+            )
             return None
 
         if game is None:
             return None
+        elapsed_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
 
         description = (game.description or "").strip()
         image_url = (getattr(game, "image", "") or "").strip()
         if not description and not image_url:
             return None
-        logger.info(
-            "BGG request success bgg_id=%s title=%s requested=%s",
+        log_fn = logger.warning if elapsed_ms >= SLOW_MS else logger.info
+        log_fn(
+            "BGG fetch ok bgg_id=%s title=%s fields=%s ms=%s slow=%s",
             bgg_id,
             getattr(game, "name", None),
-            (
+            fields := (
                 "description+image"
                 if description and image_url
                 else "description"
@@ -150,20 +166,17 @@ class BggMetadataFetcher:
                 if image_url
                 else "none"
             ),
+            elapsed_ms,
+            elapsed_ms >= SLOW_MS,
             extra={
                 "bgg_id": bgg_id,
                 "title": getattr(game, "name", None),
                 "has_description": bool(description),
                 "has_image": bool(image_url),
-                "requested": (
-                    "description+image"
-                    if description and image_url
-                    else "description"
-                    if description
-                    else "image"
-                    if image_url
-                    else "none"
-                ),
+                "fields": fields,
+                "ms": elapsed_ms,
+                "status": "success",
+                "slow": elapsed_ms >= SLOW_MS,
             },
         )
 
@@ -184,13 +197,14 @@ class BggMetadataFetcher:
         return datetime.now(timezone.utc) - fetched_at > timedelta(seconds=TTL)
 
 
-def fetch_metadata_live(bgg_id: int) -> Optional[BggMetadata]:
+def fetch_metadata_live(bgg_id: int) -> tuple[Optional[BggMetadata], Optional[int]]:
     """
     Fetch metadata directly from BGG without touching the cache or shared session.
     Used for parallel fan-out where a shared session/client would cause contention.
     """
     if not FETCH_ENABLED or not BGG_ACCESS_TOKEN:
-        return None
+        return None, None
+    start = datetime.now(timezone.utc)
     try:
         client = BGGClient(
             access_token=BGG_ACCESS_TOKEN,
@@ -199,30 +213,51 @@ def fetch_metadata_live(bgg_id: int) -> Optional[BggMetadata]:
             retries=1,
             retry_delay=2,
         )
-        logger.info("BGG request start bgg_id=%s", bgg_id, extra={"bgg_id": bgg_id})
         game = client.game(game_id=bgg_id)
-    except (BGGApiTimeoutError, BGGApiError) as exc:
-        logger.warning("BGG fetch timed out for %s: %s", bgg_id, exc)
-        return None
+    except (BGGApiTimeoutError, BGGApiError):
+        elapsed_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+        logger.warning(
+            "BGG fetch failed bgg_id=%s status=timeout ms=%s",
+            bgg_id,
+            elapsed_ms,
+            extra={"bgg_id": bgg_id, "ms": elapsed_ms, "status": "timeout"},
+        )
+        return None, elapsed_ms
     except BGGError as exc:
-        logger.warning("BGG fetch failed for %s: %s", bgg_id, exc)
-        return None
+        elapsed_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+        logger.warning(
+            "BGG fetch failed bgg_id=%s status=error ms=%s err=%s",
+            bgg_id,
+            elapsed_ms,
+            exc,
+            extra={"bgg_id": bgg_id, "ms": elapsed_ms, "status": "error"},
+        )
+        return None, elapsed_ms
     except Exception as exc:  # defensive: client init or other errors
-        logger.warning("BGG fetch failed for %s: %s", bgg_id, exc)
-        return None
+        elapsed_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+        logger.warning(
+            "BGG fetch failed bgg_id=%s status=error ms=%s err=%s",
+            bgg_id,
+            elapsed_ms,
+            exc,
+            extra={"bgg_id": bgg_id, "ms": elapsed_ms, "status": "error"},
+        )
+        return None, elapsed_ms
 
     if game is None:
-        return None
+        return None, elapsed_ms
+    elapsed_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
 
     description = (game.description or "").strip()
     image_url = (getattr(game, "image", "") or "").strip()
     if not description and not image_url:
-        return None
-    logger.info(
-        "BGG request success bgg_id=%s title=%s requested=%s",
+        return None, elapsed_ms
+    log_fn = logger.warning if elapsed_ms >= SLOW_MS else logger.info
+    log_fn(
+        "BGG fetch ok bgg_id=%s title=%s fields=%s ms=%s slow=%s",
         bgg_id,
         getattr(game, "name", None),
-        (
+        fields := (
             "description+image"
             if description and image_url
             else "description"
@@ -231,25 +266,25 @@ def fetch_metadata_live(bgg_id: int) -> Optional[BggMetadata]:
             if image_url
             else "none"
         ),
+        elapsed_ms,
+        elapsed_ms >= SLOW_MS,
         extra={
             "bgg_id": bgg_id,
             "title": getattr(game, "name", None),
             "has_description": bool(description),
             "has_image": bool(image_url),
-            "requested": (
-                "description+image"
-                if description and image_url
-                else "description"
-                if description
-                else "image"
-                if image_url
-                else "none"
-            ),
+            "fields": fields,
+            "ms": elapsed_ms,
+            "status": "success",
+            "slow": elapsed_ms >= SLOW_MS,
         },
     )
 
-    return BggMetadata(
-        description=description or None,
-        image_url=image_url or None,
-        fetched_at=datetime.now(timezone.utc),
+    return (
+        BggMetadata(
+            description=description or None,
+            image_url=image_url or None,
+            fetched_at=datetime.now(timezone.utc),
+        ),
+        elapsed_ms,
     )
