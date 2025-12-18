@@ -134,7 +134,7 @@ const hasMoreReferences = computed(
 
       <div class="actions">
         <div class="more-btn" @click="emit('viewgame', props.recommendation.boardgame.id)">
-          <Icon icon="weui:arrow-filled" width="12" height="24" />
+          <Icon icon="weui:arrow-filled" width="32" height="32" />
         </div>
       </div>
     </div>
@@ -223,10 +223,12 @@ const hasMoreReferences = computed(
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: var(--text-md);
-  size: 20px;
+  font-size: var(--text-lg); /* Increased font size */
   cursor: pointer;
   color: var(--color-primary);
+  /* Additional styles for icon */
+  width: 32px; /* Set width for the icon */
+  height: 32px; /* Set height for the icon */
 }
 
 /* Responsive adjustments for narrow screens */

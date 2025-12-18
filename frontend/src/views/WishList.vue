@@ -11,6 +11,8 @@ const wishlist = useWishlistStore()
 const reccommendationId = ref(wishlist.allItems.keys().next().value || '')
 const recommendations = ref<Recommendation[]>(wishlist.recommendationsFor(reccommendationId.value))
 
+const participant_id = localStorage.getItem('participant_id')
+
 const viewgame = (gameId: number) => {
   router.push(`/game/${reccommendationId.value}/${gameId}`)
 }
@@ -19,6 +21,7 @@ const viewgame = (gameId: number) => {
 <template>
   <nav class="navbar">
     <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink>
+    <h2 class="id">Your participant ID: {{ participant_id }}</h2>
   </nav>
   <h1 class="title">Wishlist</h1>
   <div class="container">

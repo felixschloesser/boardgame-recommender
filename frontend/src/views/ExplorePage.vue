@@ -24,6 +24,8 @@ const playerCount = ref(4)
 
 const loading = ref(false)
 
+const participant_id = localStorage.getItem('participant_id')
+
 const clampPlayers = () => {
   if (!playerCount.value || playerCount.value < 1) playerCount.value = 1
 }
@@ -86,6 +88,7 @@ const confirm = async () => {
 <template>
   <nav class="navbar">
     <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink>
+    <h2 class="id">Your participant ID: {{ participant_id }}</h2>
     <RouterLink to="/wishlist"
       ><Icon class="icon-btn" icon="material-symbols:favorite-rounded"
     /></RouterLink>
@@ -144,6 +147,7 @@ const confirm = async () => {
       Get Recommendations <Icon icon="material-symbols:arrow-forward-rounded" />
     </template>
   </button>
+  <div v-if="loading" class="loading-overlay"></div>
 </template>
 
 <style scoped>
@@ -196,6 +200,16 @@ const confirm = async () => {
   gap: var(--space-2);
   flex: 1 1 auto;
   justify-content: center;
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  pointer-events: auto;
 }
 
 .players-input {

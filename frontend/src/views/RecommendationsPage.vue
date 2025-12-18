@@ -44,6 +44,8 @@ onMounted(() => {
 const recommendations = ref<Recommendation[]>([])
 const router = useRouter()
 
+const participant_id = localStorage.getItem('participant_id')
+
 const fetchRecommendations = async (session_id: string) => {
   recommendations.value = await api.getSessionRecommendations(session_id)
 }
@@ -56,10 +58,11 @@ const viewgame = (gameId: number) => {
 
 <template>
   <nav class="navbar">
-    <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink
-    ><RouterLink :to="`/wishlist/${props.id}`"
-      ><Icon class="icon-btn" icon="material-symbols:favorite-rounded" />
-    </RouterLink>
+    <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink>
+    <h2 class="id">Your participant ID: {{ participant_id }}</h2>
+    <RouterLink to="/wishlist"
+      ><Icon class="icon-btn" icon="material-symbols:favorite-rounded"
+    /></RouterLink>
   </nav>
   <div class="container page">
     <h1 class="title">Recommended for you</h1>
