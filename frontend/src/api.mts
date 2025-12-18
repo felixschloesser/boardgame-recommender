@@ -66,10 +66,10 @@ async function getRecommendations(preferences: Preferences): Promise<string> {
   return response.data.id as string
 }
 
-function getSessionRecommendations(session_id: string): Promise<Recommendation[]> {
-  return apiClient
-    .get(`/recommendation/${session_id}`)
-    .then((response) => response.data.recommendations as Recommendation[])
+async function getSessionRecommendations(session_id: string): Promise<Recommendation[]> {
+  const response = await apiClient.get(`/recommendation/${session_id}`)
+  const recommendations = response.data.recommendations as Recommendation[]
+  return recommendations
 }
 
 // get added options from a session

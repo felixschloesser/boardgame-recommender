@@ -1,14 +1,15 @@
 <script lang="ts" setup>
 import RecommendationCard from '@/components/RecommendationCard.vue'
 import type { Recommendation } from '@/recommendation.mjs'
+import { useWishlistStore } from '@/stores/wishlist'
 import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { getWishlist, getRecommendationsForId } from '@/wishlist.mjs'
 
 const router = useRouter()
+const wishlist = useWishlistStore()
 
-const reccommendationId = ref(getWishlist().keys().next().value || '')
-const recommendations = ref<Recommendation[]>(getRecommendationsForId(reccommendationId.value))
+const reccommendationId = ref(wishlist.allItems.keys().next().value || '')
+const recommendations = ref<Recommendation[]>(wishlist.recommendationsFor(reccommendationId.value))
 
 const viewgame = (gameId: number) => {
   router.push(`/game/${reccommendationId.value}/${gameId}`)

@@ -3,11 +3,9 @@ import type BoardGame from '@/boardGame.mjs'
 import type { Recommendation } from '@/recommendation.mjs'
 import * as api from '@/api.mjs'
 import { computed, onMounted, ref } from 'vue'
-import {
-  addRecommendationToWishlist,
-  inWishlist,
-  removeRecommendationFromWishlist,
-} from '@/wishlist.mjs'
+import { useWishlistStore } from '@/stores/wishlist'
+
+const wishlist = useWishlistStore()
 
 interface Props {
   id: string // rec_id is required from the route
@@ -31,16 +29,16 @@ interface ReferenceChip {
 // fetch recommendation from backend using props.id
 const recommendation = ref<Recommendation | undefined>(undefined)
 const game = ref<BoardGame | undefined>(undefined)
-const isInWishlist = ref(false)
+
+const isInWishlist = computed(() => {
+  return recommendation.value ? wishlist.inWishlist(props.id, recommendation.value) : false
+})
 
 const toggleWishList = () => {
-  if (recommendation.value && inWishlist(props.id, recommendation.value)) {
-    removeRecommendationFromWishlist(props.id, recommendation.value)
-    isInWishlist.value = false
-    return
+  if (recommendation.value && wishlist.inWishlist(props.id, recommendation.value)) {
+    wishlist.remove(props.id, recommendation.value)
   } else if (recommendation.value) {
-    isInWishlist.value = true
-    addRecommendationToWishlist(props.id, recommendation.value)
+    wishlist.add(props.id, recommendation.value)
   }
 }
 
@@ -49,7 +47,6 @@ onMounted(async () => {
   recommendation.value = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
   if (recommendation.value) {
     game.value = recommendation.value.boardgame
-    isInWishlist.value = inWishlist(props.id, recommendation.value)
   }
 })
 

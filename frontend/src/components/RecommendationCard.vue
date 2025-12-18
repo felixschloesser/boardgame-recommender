@@ -1,11 +1,9 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
 import type { Recommendation } from '../recommendation.mjs'
-import {
-  addRecommendationToWishlist,
-  inWishlist,
-  removeRecommendationFromWishlist,
-} from '../wishlist.mjs'
+import { useWishlistStore } from '@/stores/wishlist'
+
+const wishlist = useWishlistStore()
 
 interface Props {
   recId: string
@@ -17,15 +15,22 @@ interface Props {
 const emit = defineEmits(['viewgame'])
 const props = defineProps<Props>()
 
-const isInWishlist = ref(inWishlist(props.recId, props.recommendation))
+const isInWishlist = ref(wishlist.inWishlist(props.recId, props.recommendation))
+const isMobile = ref(window.innerWidth <= 520)
 
 const toggleWishList = () => {
-  if (inWishlist(props.recId, props.recommendation)) {
-    removeRecommendationFromWishlist(props.recId, props.recommendation)
+  if (wishlist.inWishlist(props.recId, props.recommendation)) {
+    wishlist.remove(props.recId, props.recommendation)
     isInWishlist.value = false
   } else {
     isInWishlist.value = true
-    addRecommendationToWishlist(props.recId, props.recommendation)
+    wishlist.add(props.recId, props.recommendation)
+  }
+}
+
+const handleHardClick = () => {
+  if (isMobile.value) {
+    emit('viewgame', props.recommendation.boardgame.id)
   }
 }
 
@@ -68,7 +73,7 @@ const hasMoreReferences = computed(
 </script>
 
 <template>
-  <div :class="`recommendation-card-${props.size} card`">
+  <div @click="handleHardClick" :class="`recommendation-card-${props.size} card`">
     <div class="media">
       <div class="game-image thumb">
         <img :src="props.recommendation.boardgame.image_url" alt="Game image" />
@@ -128,13 +133,9 @@ const hasMoreReferences = computed(
       </div>
 
       <div class="actions">
-        <button
-          class="btn-primary more-btn"
-          @click="emit('viewgame', props.recommendation.boardgame.id)"
-        >
-          <Icon icon="material-symbols:arrow-forward-rounded" width="20" height="20" />
-          More information
-        </button>
+        <div class="more-btn" @click="emit('viewgame', props.recommendation.boardgame.id)">
+          <Icon icon="weui:arrow-filled" width="12" height="24" />
+        </div>
       </div>
     </div>
   </div>
@@ -221,8 +222,11 @@ const hasMoreReferences = computed(
 .more-btn {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   font-size: var(--text-md);
+  size: 20px;
+  cursor: pointer;
+  color: var(--color-primary);
 }
 
 /* Responsive adjustments for narrow screens */

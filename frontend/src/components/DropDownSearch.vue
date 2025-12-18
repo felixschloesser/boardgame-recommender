@@ -58,13 +58,7 @@ const showOptions = () => {
 }
 
 const exit = () => {
-  if (!selected.value) {
-    selected.value = undefined
-    searchFilter.value = ''
-  } else {
-    searchFilter.value = selected.value.name
-  }
-  emit('exit', selected.value)
+  searchFilter.value = ''
   optionsShown.value = false
 }
 

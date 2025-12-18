@@ -61,9 +61,11 @@ const onSelected = (option?: Option) => {
   addGame()
 }
 
-// just set game to selected option, don't add automatically
-const onExit = (option?: Option) => {
-  selectedGame.value = option
+// just clear the search filter on exit
+const onExit = () => {
+  if (searchBar.value) {
+    searchBar.value.searchFilter = ''
+  }
 }
 
 // Track the currently active option while typing (top match from dropdown)
