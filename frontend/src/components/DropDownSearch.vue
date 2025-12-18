@@ -19,7 +19,7 @@ const searchFilter = ref('')
 const selected = ref<Option | undefined>(undefined)
 const optionsShown = ref(false)
 
-const emit = defineEmits(['selected', 'filter', 'active'])
+const emit = defineEmits(['selected', 'filter', 'active', 'exit'])
 
 const filteredOptions = computed(() => {
   const filter = searchFilter.value.toLowerCase()
@@ -64,7 +64,7 @@ const exit = () => {
   } else {
     searchFilter.value = selected.value.name
   }
-  emit('selected', selected.value)
+  emit('exit', selected.value)
   optionsShown.value = false
 }
 
@@ -73,6 +73,7 @@ const selectOption = (option: Option) => {
   optionsShown.value = false
   searchFilter.value = selected.value.name
   emit('selected', selected.value)
+  showOptions()
 }
 
 const keyMonitor = (event: KeyboardEvent) => {

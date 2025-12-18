@@ -91,6 +91,7 @@ const confirm = async () => {
     /></RouterLink>
   </nav>
   <h1 class="header">Enter games you already tried and liked here:</h1>
+  <h2 class="subheader">You can add multiple games to get better recommendations.</h2>
   <p v-if="errorMessage" class="error-banner" role="alert">
     <Icon icon="mdi:alert-circle" class="icon-alert" />
     {{ errorMessage }}
@@ -150,6 +151,13 @@ const confirm = async () => {
   font-size: var(--text-xl);
   margin: var(--space-4) 0;
   text-align: center;
+}
+
+.subheader {
+  font-size: var(--text-md);
+  margin: 0 0 var(--space-4) 0;
+  text-align: center;
+  color: var(--color-text-secondary);
 }
 
 .icon-players {
