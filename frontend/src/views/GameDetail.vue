@@ -2,8 +2,9 @@
 import type BoardGame from '@/boardGame.mjs'
 import type { Recommendation } from '@/recommendation.mjs'
 import * as api from '@/api.mjs'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useWishlistStore } from '@/stores/wishlist'
+import TaskCompletedPopup from '@/components/TaskCompletedPopup.vue'
 
 const wishlist = useWishlistStore()
 
@@ -27,24 +28,32 @@ interface ReferenceChip {
 }
 
 // fetch recommendation from backend using props.id
+const participant_id = localStorage.getItem('participant_id')
+
 const recommendation = ref<Recommendation | undefined>(undefined)
 const game = ref<BoardGame | undefined>(undefined)
 
 const isInWishlist = computed(() => {
-  return recommendation.value ? wishlist.inWishlist(props.id, recommendation.value) : false
+  return recommendation.value
+    ? wishlist.inWishlist(participant_id ?? '', recommendation.value)
+    : false
 })
 
 const toggleWishList = () => {
-  if (recommendation.value && wishlist.inWishlist(props.id, recommendation.value)) {
-    wishlist.remove(props.id, recommendation.value)
+  if (!participant_id) return
+  if (!recommendation.value) return
+  const recommendationWithId = { ...recommendation.value, id: props.id }
+  if (recommendation.value && wishlist.inWishlist(participant_id ?? '', recommendationWithId)) {
+    wishlist.remove(participant_id ?? '', recommendationWithId)
   } else if (recommendation.value) {
-    wishlist.add(props.id, recommendation.value)
+    wishlist.add(participant_id ?? '', recommendationWithId)
   }
 }
 
 onMounted(async () => {
   const response = await api.getSessionRecommendations(props.id)
-  recommendation.value = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
+  const rec = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
+  recommendation.value = { ...rec, id: props.id } // ensure id is set
   if (recommendation.value) {
     game.value = recommendation.value.boardgame
   }
@@ -70,6 +79,8 @@ const normInfluence = (val: unknown): 'positive' | 'neutral' | 'negative' => {
 const expanded = ref(false)
 const maxChips = 8
 
+const showPopup = ref(false)
+
 const featureChips = computed<FeatureChip[]>(() => {
   const raw = recommendation.value?.explanation?.features
   const items = Array.isArray(raw) ? raw : []
@@ -81,6 +92,23 @@ const referenceChips = computed<ReferenceChip[]>(() => {
   const items = Array.isArray(raw) ? raw : []
   return expanded.value ? items : items.slice(0, maxChips)
 })
+
+watch(
+  () => wishlist.hasCompletedTask(participant_id ?? ''),
+  (completed) => {
+    // refetch recommendations if wishlist changes
+    if (completed) {
+      showPopup.value = true
+    }
+  },
+)
+
+const closePopup = () => {
+  showPopup.value = false
+  alert(
+    'Feel free to explore further, please remember to complete the questionnaire in your wishlist when done!',
+  )
+}
 </script>
 
 <template>
@@ -176,6 +204,7 @@ const referenceChips = computed<ReferenceChip[]>(() => {
       <p class="overview-text">{{ game?.description }}</p>
     </div>
   </div>
+  <TaskCompletedPopup :visible="showPopup" @close="closePopup" />
 </template>
 
 <style scoped>

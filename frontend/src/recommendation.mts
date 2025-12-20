@@ -14,6 +14,7 @@ interface ReferencesExplanation {
 }
 
 export interface Recommendation {
+  id?: string
   boardgame: BoardGame
   explanation: {
     type: 'references' | 'features'

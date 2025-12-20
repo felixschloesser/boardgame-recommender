@@ -8,6 +8,7 @@ const wishlist = useWishlistStore()
 interface Props {
   recId: string
   recommendation: Recommendation
+  participant_id: string | null
   explanationStyle: 'references' | 'features'
   size: 'small' | 'large'
 }
@@ -15,16 +16,26 @@ interface Props {
 const emit = defineEmits(['viewgame'])
 const props = defineProps<Props>()
 
-const isInWishlist = ref(wishlist.inWishlist(props.recId, props.recommendation))
+const isInWishlist = props.participant_id
+  ? ref(wishlist.inWishlist(props.participant_id, props.recommendation))
+  : ref(false)
 const isMobile = ref(window.innerWidth <= 520)
 
+const recommendationWithId = computed(() => {
+  return {
+    ...props.recommendation,
+    id: props.recId,
+  }
+})
+
 const toggleWishList = () => {
-  if (wishlist.inWishlist(props.recId, props.recommendation)) {
-    wishlist.remove(props.recId, props.recommendation)
+  if (!props.participant_id) return
+  if (wishlist.inWishlist(props.participant_id, recommendationWithId.value)) {
+    wishlist.remove(props.participant_id, recommendationWithId.value)
     isInWishlist.value = false
   } else {
     isInWishlist.value = true
-    wishlist.add(props.recId, props.recommendation)
+    wishlist.add(props.participant_id, recommendationWithId.value)
   }
 }
 

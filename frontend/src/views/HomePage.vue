@@ -6,14 +6,11 @@ import { useWishlistStore } from '@/stores/wishlist'
 const wishlist = useWishlistStore()
 
 const hasWishlist = computed(() => wishlist.allItems.size > 0)
-
-const participant_id = localStorage.getItem('participant_id')
 </script>
 
 <template>
   <div class="center container">
     <h1 class="title">Boardgame Recommender</h1>
-    <h5>Your participant ID: {{ participant_id }}</h5>
     <div class="actions">
       <div class="action">
         <RouterLink v-if="hasWishlist" to="/wishlist">
