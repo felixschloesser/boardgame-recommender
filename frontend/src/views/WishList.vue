@@ -8,13 +8,12 @@ import { RouterLink, useRouter } from 'vue-router'
 const router = useRouter()
 const wishlist = useWishlistStore()
 
-const reccommendationId = ref(wishlist.allItems.keys().next().value || '')
-const recommendations = ref<Recommendation[]>(wishlist.recommendationsFor(reccommendationId.value))
 const participant_id = localStorage.getItem('participant_id')
+const recommendations = ref<Recommendation[]>(wishlist.recommendationsFor(participant_id ?? ''))
 const taskCompleted = wishlist.hasCompletedTask(participant_id ?? '')
 
-const viewgame = (gameId: number) => {
-  router.push(`/game/${reccommendationId.value}/${gameId}`)
+const viewgame = (rec: Recommendation) => {
+  router.push(`/game/${rec.id ?? ''}/${rec.boardgame.id}`)
 }
 
 const openQuestionnaire = () => {
@@ -41,13 +40,13 @@ const openQuestionnaire = () => {
     <div class="wishlist-grid" v-else>
       <RecommendationCard
         v-for="rec in recommendations"
-        :recId="reccommendationId"
+        :recId="rec.id ?? ''"
         :key="rec.boardgame.id"
         :recommendation="rec"
         :participant_id="participant_id ?? ''"
         size="small"
         :explanation-style="rec.explanation.type"
-        @viewgame="viewgame"
+        @viewgame="viewgame(rec)"
       ></RecommendationCard>
     </div>
   </div>
