@@ -61,6 +61,13 @@ const onSelected = (option?: Option) => {
   addGame()
 }
 
+// just clear the search filter on exit
+const onExit = () => {
+  if (searchBar.value) {
+    searchBar.value.searchFilter = ''
+  }
+}
+
 // Track the currently active option while typing (top match from dropdown)
 const onActive = (option?: Option) => {
   activeOption.value = option
@@ -85,6 +92,7 @@ const canAdd = computed(() => {
         :maxItems="5"
         @selected="onSelected"
         @active="onActive"
+        @exit="onExit"
         @filter="(filter) => refetchOptions(filter)"
       />
       <button class="add-btn btn-primary" @click="addGame" :disabled="!canAdd" title="Add game">

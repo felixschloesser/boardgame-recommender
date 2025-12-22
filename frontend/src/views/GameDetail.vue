@@ -2,16 +2,14 @@
 import type BoardGame from '@/boardGame.mjs'
 import type { Recommendation } from '@/recommendation.mjs'
 import * as api from '@/api.mjs'
-import { computed, onMounted, ref } from 'vue'
-import {
-  addRecommendationToWishlist,
-  inWishlist,
-  removeRecommendationFromWishlist,
-} from '@/wishlist.mjs'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useWishlistStore } from '@/stores/wishlist'
+import TaskCompletedPopup from '@/components/TaskCompletedPopup.vue'
+
+const wishlist = useWishlistStore()
 
 interface Props {
   id: string // rec_id is required from the route
-  explanationStyle: 'references' | 'features'
   gameId: number
 }
 
@@ -30,27 +28,34 @@ interface ReferenceChip {
 }
 
 // fetch recommendation from backend using props.id
+const participant_id = localStorage.getItem('participant_id')
+
 const recommendation = ref<Recommendation | undefined>(undefined)
 const game = ref<BoardGame | undefined>(undefined)
-const isInWishlist = ref(false)
+
+const isInWishlist = computed(() => {
+  return recommendation.value
+    ? wishlist.inWishlist(participant_id ?? '', recommendation.value)
+    : false
+})
 
 const toggleWishList = () => {
-  if (recommendation.value && inWishlist(props.id, recommendation.value)) {
-    removeRecommendationFromWishlist(props.id, recommendation.value)
-    isInWishlist.value = false
-    return
+  if (!participant_id) return
+  if (!recommendation.value) return
+  const recommendationWithId = { ...recommendation.value, id: props.id }
+  if (recommendation.value && wishlist.inWishlist(participant_id ?? '', recommendationWithId)) {
+    wishlist.remove(participant_id ?? '', recommendationWithId)
   } else if (recommendation.value) {
-    isInWishlist.value = true
-    addRecommendationToWishlist(props.id, recommendation.value)
+    wishlist.add(participant_id ?? '', recommendationWithId)
   }
 }
 
 onMounted(async () => {
   const response = await api.getSessionRecommendations(props.id)
-  recommendation.value = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
+  const rec = response.find((rec) => rec.boardgame.id === props.gameId) as Recommendation
+  recommendation.value = { ...rec, id: props.id } // ensure id is set
   if (recommendation.value) {
     game.value = recommendation.value.boardgame
-    isInWishlist.value = inWishlist(props.id, recommendation.value)
   }
 })
 
@@ -74,15 +79,36 @@ const normInfluence = (val: unknown): 'positive' | 'neutral' | 'negative' => {
 const expanded = ref(false)
 const maxChips = 8
 
+const showPopup = ref(false)
+
 const featureChips = computed<FeatureChip[]>(() => {
-  const items = (recommendation.value?.explanation?.features as FeatureChip[]) || []
+  const raw = recommendation.value?.explanation?.features
+  const items = Array.isArray(raw) ? raw : []
   return expanded.value ? items : items.slice(0, maxChips)
 })
 
 const referenceChips = computed<ReferenceChip[]>(() => {
-  const items = (recommendation.value?.explanation?.references as unknown as ReferenceChip[]) || []
+  const raw = recommendation.value?.explanation?.references
+  const items = Array.isArray(raw) ? raw : []
   return expanded.value ? items : items.slice(0, maxChips)
 })
+
+watch(
+  () => wishlist.hasCompletedTask(participant_id ?? ''),
+  (completed) => {
+    // refetch recommendations if wishlist changes
+    if (completed) {
+      showPopup.value = true
+    }
+  },
+)
+
+const closePopup = () => {
+  showPopup.value = false
+  alert(
+    'Feel free to explore further, please remember to complete the questionnaire in your wishlist when done!',
+  )
+}
 </script>
 
 <template>
@@ -118,7 +144,7 @@ const referenceChips = computed<ReferenceChip[]>(() => {
         </div>
 
         <div class="explanations" v-if="recommendation">
-          <template v-if="props.explanationStyle === 'features'">
+          <div v-if="recommendation.explanation?.type === 'features'">
             <div
               v-for="feature in featureChips"
               :key="feature.label"
@@ -126,8 +152,8 @@ const referenceChips = computed<ReferenceChip[]>(() => {
             >
               {{ feature.label }}
             </div>
-          </template>
-          <template v-else-if="props.explanationStyle === 'references'">
+          </div>
+          <div v-else-if="recommendation.explanation?.type === 'references'">
             <div
               v-for="reference in referenceChips"
               :key="reference.bgg_id"
@@ -135,12 +161,12 @@ const referenceChips = computed<ReferenceChip[]>(() => {
             >
               {{ reference.title }}
             </div>
-          </template>
+          </div>
           <button
             v-if="
-              (props.explanationStyle === 'features' &&
+              (recommendation.explanation?.type === 'features' &&
                 (recommendation?.explanation?.features?.length || 0) > maxChips) ||
-              (props.explanationStyle === 'references' &&
+              (recommendation.explanation?.type === 'references' &&
                 (recommendation?.explanation?.references?.length || 0) > maxChips)
             "
             class="toggle-explanations"
@@ -156,13 +182,21 @@ const referenceChips = computed<ReferenceChip[]>(() => {
     <div class="info-tabs">
       <div class="info chip" v-for="genre in game?.genre" :key="genre">{{ genre }}</div>
       <div class="info chip" v-for="theme in game?.themes" :key="theme">{{ theme }}</div>
-      <div class="info chip" v-if="game">BRAIN {{ game?.complexity?.toPrecision(2) }}</div>
-      <div class="info chip">{{ game?.min_players }}-{{ game?.max_players }} Players</div>
+      <div class="info chip" v-if="game">
+        <Icon icon="mdi:brain" width="16" height="16" /> {{ game?.complexity?.toPrecision(2) }}
+      </div>
+      <div class="info chip">
+        <Icon icon="material-symbols:person-rounded" width="16" height="16" />
+        {{ game?.min_players }}-{{ game?.max_players }}
+      </div>
       <div class="info chip" v-if="(game?.age_recommendation ?? 0) > 0">
-        AGE {{ game?.age_recommendation }}+
+        Ages {{ game?.age_recommendation }}+
       </div>
       <div class="info chip">{{ game?.playing_time_minutes }} mins</div>
-      <div class="info chip" v-if="game">STER {{ game?.avg_user_rating?.toPrecision(2) }}</div>
+      <div class="info chip" v-if="game">
+        <Icon icon="material-symbols:star-rounded" width="16" height="16" />
+        {{ game?.avg_user_rating?.toPrecision(2) }}
+      </div>
     </div>
 
     <div class="overview card">
@@ -170,6 +204,7 @@ const referenceChips = computed<ReferenceChip[]>(() => {
       <p class="overview-text">{{ game?.description }}</p>
     </div>
   </div>
+  <TaskCompletedPopup :visible="showPopup" @close="closePopup" />
 </template>
 
 <style scoped>

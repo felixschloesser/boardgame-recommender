@@ -2,8 +2,12 @@ import axios from 'axios'
 import type BoardGame from './boardGame.mts'
 import type { Option } from './boardGame.mjs'
 import type { Recommendation } from './recommendation.mts'
+import { capitalize } from 'vue'
 
 const apiBaseUrl = 'http://127.0.0.1:8000/api'
+
+// Simple in-memory cache for user preferences
+const preferenceCache = new Map<string, Preferences>()
 
 type Participant = {
   participant_id: string
@@ -62,18 +66,30 @@ async function getRecommendations(preferences: Preferences): Promise<string> {
   const response = await apiClient.post(`/recommendation`, {
     liked_games: liked_game_ids,
     play_context: { players: preferences.players },
+    num_results: 7, // something to play with
   })
+  preferenceCache.set(response.data.id as string, preferences) // add preferences to cache
   return response.data.id as string
 }
 
-function getSessionRecommendations(session_id: string): Promise<Recommendation[]> {
-  return apiClient
-    .get(`/recommendation/${session_id}`)
-    .then((response) => response.data.recommendations as Recommendation[])
+async function getSessionRecommendations(session_id: string): Promise<Recommendation[]> {
+  const response = await apiClient.get(`/recommendation/${session_id}`)
+  const recommendations = response.data.recommendations as Recommendation[]
+  // add style type to local storage if not already set
+  const [first] = recommendations
+  if (localStorage.getItem('session_type') === null && first) {
+    localStorage.setItem('session_type', capitalize(first.explanation.type))
+  } else if (first && localStorage.getItem('session_type') !== capitalize(first.explanation.type)) {
+    localStorage.setItem('session_type', capitalize(first.explanation.type))
+  }
+  return recommendations
 }
 
 // get added options from a session
 async function getSessionPreferences(session_id: string): Promise<Preferences> {
+  if (preferenceCache.has(session_id)) {
+    return preferenceCache.get(session_id) as Preferences
+  }
   const response = await apiClient.get(`/recommendation/${session_id}`)
   const liked_game_ids = response.data.intent.liked_games as number[]
   const liked_games: Option[] = await Promise.all(

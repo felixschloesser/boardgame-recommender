@@ -2,8 +2,10 @@
 import { RouterLink, useRouter } from 'vue-router'
 import RecommendationCard from '@/components/RecommendationCard.vue'
 import type { Recommendation } from '@/recommendation.mjs'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import * as api from '@/api.mjs'
+import { useWishlistStore } from '@/stores/wishlist'
+import TaskCompletedPopup from '@/components/TaskCompletedPopup.vue'
 
 interface Props {
   id: string
@@ -44,8 +46,29 @@ onMounted(() => {
 const recommendations = ref<Recommendation[]>([])
 const router = useRouter()
 
+const wishlist = useWishlistStore()
+const participant_id = localStorage.getItem('participant_id')
+const showPopup = ref(false)
+
+watch(
+  () => wishlist.hasCompletedTask(participant_id ?? ''),
+  (completed) => {
+    // refetch recommendations if wishlist changes
+    if (completed) {
+      showPopup.value = true
+    }
+  },
+)
+
 const fetchRecommendations = async (session_id: string) => {
   recommendations.value = await api.getSessionRecommendations(session_id)
+}
+
+const closePopup = () => {
+  showPopup.value = false
+  alert(
+    'Feel free to explore further, please remember to complete the questionnaire in your wishlist when done!',
+  )
 }
 
 const viewgame = (gameId: number) => {
@@ -56,10 +79,10 @@ const viewgame = (gameId: number) => {
 
 <template>
   <nav class="navbar">
-    <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink
-    ><RouterLink :to="`/wishlist/${props.id}`"
-      ><Icon class="icon-btn" icon="material-symbols:favorite-rounded" />
-    </RouterLink>
+    <RouterLink to="/"><Icon class="icon-btn" icon="material-symbols:home-rounded" /></RouterLink>
+    <RouterLink to="/wishlist"
+      ><Icon class="icon-btn" icon="material-symbols:favorite-rounded"
+    /></RouterLink>
   </nav>
   <div class="container page">
     <h1 class="title">Recommended for you</h1>
@@ -69,6 +92,7 @@ const viewgame = (gameId: number) => {
         :recId="props.id"
         :key="rec.boardgame.id"
         :recommendation="rec"
+        :participant_id="participant_id"
         :explanationStyle="rec.explanation.type"
         size="large"
         @viewgame="viewgame"
@@ -80,6 +104,7 @@ const viewgame = (gameId: number) => {
       >Change Preferences</RouterLink
     >
   </div>
+  <TaskCompletedPopup :visible="showPopup" @close="closePopup" />
 </template>
 
 <style scoped>

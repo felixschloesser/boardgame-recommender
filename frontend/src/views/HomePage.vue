@@ -1,9 +1,11 @@
 <script lang="ts" setup>
 import { RouterLink } from 'vue-router'
 import { computed } from 'vue'
-import { getWishlist } from '@/wishlist.mjs'
+import { useWishlistStore } from '@/stores/wishlist'
 
-const hasWishlist = computed(() => getWishlist().size > 0)
+const wishlist = useWishlistStore()
+
+const hasWishlist = computed(() => wishlist.allItems.size > 0)
 </script>
 
 <template>

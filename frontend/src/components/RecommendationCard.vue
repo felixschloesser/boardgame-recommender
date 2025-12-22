@@ -1,15 +1,14 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
 import type { Recommendation } from '../recommendation.mjs'
-import {
-  addRecommendationToWishlist,
-  inWishlist,
-  removeRecommendationFromWishlist,
-} from '../wishlist.mjs'
+import { useWishlistStore } from '@/stores/wishlist'
+
+const wishlist = useWishlistStore()
 
 interface Props {
   recId: string
   recommendation: Recommendation
+  participant_id: string | null
   explanationStyle: 'references' | 'features'
   size: 'small' | 'large'
 }
@@ -17,15 +16,32 @@ interface Props {
 const emit = defineEmits(['viewgame'])
 const props = defineProps<Props>()
 
-const isInWishlist = ref(inWishlist(props.recId, props.recommendation))
+const isInWishlist = props.participant_id
+  ? ref(wishlist.inWishlist(props.participant_id, props.recommendation))
+  : ref(false)
+const isMobile = ref(window.innerWidth <= 520)
+
+const recommendationWithId = computed(() => {
+  return {
+    ...props.recommendation,
+    id: props.recId,
+  }
+})
 
 const toggleWishList = () => {
-  if (inWishlist(props.recId, props.recommendation)) {
-    removeRecommendationFromWishlist(props.recId, props.recommendation)
+  if (!props.participant_id) return
+  if (wishlist.inWishlist(props.participant_id, recommendationWithId.value)) {
+    wishlist.remove(props.participant_id, recommendationWithId.value)
     isInWishlist.value = false
   } else {
     isInWishlist.value = true
-    addRecommendationToWishlist(props.recId, props.recommendation)
+    wishlist.add(props.participant_id, recommendationWithId.value)
+  }
+}
+
+const handleHardClick = () => {
+  if (isMobile.value) {
+    emit('viewgame', props.recommendation.boardgame.id)
   }
 }
 
@@ -68,7 +84,7 @@ const hasMoreReferences = computed(
 </script>
 
 <template>
-  <div :class="`recommendation-card-${props.size} card`">
+  <div @click="handleHardClick" :class="`recommendation-card-${props.size} card`">
     <div class="media">
       <div class="game-image thumb">
         <img :src="props.recommendation.boardgame.image_url" alt="Game image" />
@@ -128,13 +144,9 @@ const hasMoreReferences = computed(
       </div>
 
       <div class="actions">
-        <button
-          class="btn-primary more-btn"
-          @click="emit('viewgame', props.recommendation.boardgame.id)"
-        >
-          <Icon icon="material-symbols:arrow-forward-rounded" width="20" height="20" />
-          More information
-        </button>
+        <div class="more-btn" @click="emit('viewgame', props.recommendation.boardgame.id)">
+          <Icon icon="weui:arrow-filled" width="32" height="32" />
+        </div>
       </div>
     </div>
   </div>
@@ -221,8 +233,13 @@ const hasMoreReferences = computed(
 .more-btn {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-md);
+  gap: var(--space-1);
+  font-size: var(--text-lg); /* Increased font size */
+  cursor: pointer;
+  color: var(--color-primary);
+  /* Additional styles for icon */
+  width: 32px; /* Set width for the icon */
+  height: 32px; /* Set height for the icon */
 }
 
 /* Responsive adjustments for narrow screens */

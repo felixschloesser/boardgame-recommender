@@ -14,10 +14,11 @@ interface ReferencesExplanation {
 }
 
 export interface Recommendation {
+  id?: string
   boardgame: BoardGame
   explanation: {
     type: 'references' | 'features'
-    references?: ReferencesExplanation[]
-    features?: FeatureExplanation[]
+    references?: ReferencesExplanation[] | null
+    features?: FeatureExplanation[] | null
   }
 }
