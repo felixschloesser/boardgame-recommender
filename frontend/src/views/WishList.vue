@@ -17,7 +17,9 @@ const viewgame = (rec: Recommendation) => {
 }
 
 const openQuestionnaire = () => {
-  window.open('https://example.com/questionnaire', '_blank')
+  const session_type = localStorage.getItem('session_type')
+  const link_to_questionnaire = `https://forms.office.com/Pages/ResponsePage.aspx?id=m1hzOUCetU6ADrC2OD0WIWDTpTeScE9JrBYStf8YoldUQ01BRjBMWUpKRVVTTTdFT1dLVTc5MFo0WS4u&r012cbe1c0c8e4f43a3d2ba264e1062c4=${participant_id}&r3529d9540eb242369503b3859521d1d6="Session%20type%20${session_type}"`
+  window.open(link_to_questionnaire, '_blank')
 }
 </script>
 
