@@ -18,7 +18,11 @@ from boardgames_api.infrastructure.database import ensure_seeded, init_db
 from boardgames_api.infrastructure.embeddings import load_embedding
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR.parent / "static"
+# Static assets live inside the package so wheels/container installs can serve them.
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+# Ensure directories exist so imports during tests don't fail if the frontend hasn't been built.
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+(STATIC_DIR / "assets").mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger("uvicorn.error")
 
 

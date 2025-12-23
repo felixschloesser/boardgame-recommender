@@ -38,3 +38,4 @@ boardgames-api = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/boardgames_api"]
+include = ["src/boardgames_api/static/**"]

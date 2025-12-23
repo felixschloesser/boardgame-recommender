@@ -1,10 +1,11 @@
 import axios from 'axios'
+import { capitalize } from 'vue'
 import type BoardGame from './boardGame.mts'
 import type { Option } from './boardGame.mjs'
 import type { Recommendation } from './recommendation.mts'
-import { capitalize } from 'vue'
 
-const apiBaseUrl = 'http://127.0.0.1:8000/api'
+// Allow overriding the API origin (e.g., when proxied by OrbStack); default to same origin.
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 // Simple in-memory cache for user preferences
 const preferenceCache = new Map<string, Preferences>()

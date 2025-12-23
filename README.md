@@ -16,7 +16,7 @@ Boardgame Recommender is a system designed to help board game enthusiasts discov
 - **FastAPI-Based**: A lightweight and efficient backend for serving recommendations.
 - **SQLite Integration**: Imports preprocessed data and trained models for querying.
 - **RESTful API**: Exposes endpoints for recommendations and metadata.
-- **Live BGG Metadata**: Game detail responses enrich descriptions and cover images from the BoardGameGeek API (requires `BGG_ACCESS_TOKEN`, toggle with `BGG_FETCH_ENABLED=0`, cache TTL via `BGG_METADATA_TTL_SECONDS`).
+- **Live BGG Metadata**: Game detail responses enrich descriptions and cover images from the BoardGameGeek API (enable by providing `BGG_ACCESS_TOKEN`; optional `BGG_FETCH_ENABLED` to force on/off, cache TTL via `BGG_METADATA_TTL_SECONDS`).
 
 ### Frontend
 - **Single Page Application (SPA)**: A Vue-based user interface.
@@ -97,6 +97,35 @@ This repo standardizes on `uv` for Python runtime and dependency management. The
 
 5. Access the application:
    - Open your browser and navigate to `http://127.0.0.1:8000`.
+
+---
+
+## Container Deployment
+
+Build a self-contained image (frontend build + API + datasets) from the repo root:
+
+```bash
+podman build -t boardgame-recommender .
+```
+
+Run it (adjust host port as needed). Mounting `./data` keeps the SQLite DB and embeddings writable/persistent:
+
+```bash
+podman run -d --name boardgames \
+  -p 18080:8000 \
+  -v $(pwd)/data:/app/data:Z \
+  boardgame-recommender \
+  uvicorn boardgames_api.app:app --host 0.0.0.0 --port 8000
+```
+
+Key environment knobs (already defaulted in the image):
+- `BOARDGAMES_DB_PATH=/app/data/app.sqlite3`
+- `BOARDGAMES_PARQUET_PATH=/app/data/processed/boardgames.parquet`
+- `BOARDGAMES_EMBEDDINGS_DIR=/app/data/embeddings`
+- `BGG_ACCESS_TOKEN=<token>` (enable live metadata; omit to stay offline). Optional: `BGG_FETCH_ENABLED` to force on/off.
+
+Health check: `GET /health`. The SPA and API share the same origin; reverse proxies can path-prefix the service without extra config.
+
 
 ---
 

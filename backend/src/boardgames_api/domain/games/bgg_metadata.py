@@ -17,7 +17,13 @@ from boardgames_api.domain.games.records import BoardgameBggMetadataRecord
 logger = logging.getLogger("uvicorn.error")
 
 BGG_ACCESS_TOKEN = os.getenv("BGG_ACCESS_TOKEN")
-FETCH_ENABLED = os.getenv("BGG_FETCH_ENABLED", "1").lower() not in {"0", "false", "no"}
+_fetch_env = os.getenv("BGG_FETCH_ENABLED")
+# Default: enable live fetch only when a token is present; allow explicit override via env.
+FETCH_ENABLED = (
+    _fetch_env.lower() not in {"0", "false", "no"}
+    if _fetch_env is not None
+    else bool(BGG_ACCESS_TOKEN)
+)
 TTL = int(os.getenv("BGG_METADATA_TTL_SECONDS", str(60 * 60 * 24 * 7)))
 SLOW_MS = int(os.getenv("BGG_SLOW_MS", "2000"))
 
