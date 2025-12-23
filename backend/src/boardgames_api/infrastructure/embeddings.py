@@ -12,7 +12,6 @@ import polars as pl
 from boardgames_api.infrastructure import database
 
 DEFAULT_EMBEDDINGS_DIR = Path(__file__).resolve().parents[4] / "data" / "embeddings"
-DEFAULT_EMBEDDING_RUN = os.getenv("BOARDGAMES_EMBEDDING_RUN")
 DEFAULT_EMBEDDINGS_DIR = Path(
     os.getenv("BOARDGAMES_EMBEDDINGS_DIR", DEFAULT_EMBEDDINGS_DIR)
 ).resolve()
@@ -49,7 +48,8 @@ def _find_latest_run(embeddings_dir: Path) -> str:
 def load_embedding(run_id: Optional[str] = None, use_cache: bool = True) -> Embeddings:
     cache = _EMBEDDING_CACHE if isinstance(_EMBEDDING_CACHE, dict) else {}
     embeddings_dir = DEFAULT_EMBEDDINGS_DIR
-    run = run_id or DEFAULT_EMBEDDING_RUN or _find_latest_run(embeddings_dir)
+    env_run = os.getenv("BOARDGAMES_EMBEDDING_RUN")
+    run = run_id or env_run or _find_latest_run(embeddings_dir)
     if use_cache and run in cache:
         return cache[run]
     vectors_path = embeddings_dir / run / "vectors.parquet"
