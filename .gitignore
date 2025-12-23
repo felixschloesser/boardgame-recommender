@@ -14,12 +14,15 @@ __pycache__/
 
 # JS
 node_modules
+.npm-cache
 
 # Data artifacts
 data/raw/*
 data/processed/*
 data/embeddings/*
 data/app.sqlite3
+data/app.sqlite3-shm
+data/app.sqlite3-wal
 !data/**/.gitkeep
 
 # Misc

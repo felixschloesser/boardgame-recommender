@@ -20,10 +20,27 @@ from boardgames_api.infrastructure.embeddings import load_embedding
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live inside the package so wheels/container installs can serve them.
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-# Ensure directories exist so imports during tests don't fail if the frontend hasn't been built.
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
-(STATIC_DIR / "assets").mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger("uvicorn.error")
+
+
+def _ensure_static_present() -> None:
+    """
+    Fail fast with a clear message if the frontend build output is missing.
+    """
+    missing = []
+    if not (STATIC_DIR / "index.html").exists():
+        missing.append("index.html")
+    if not (STATIC_DIR / "assets").exists():
+        missing.append("assets/")
+    if missing:
+        raise RuntimeError(
+            "Frontend build missing required files "
+            f"({', '.join(missing)}). Run `npm run build` in frontend/ "
+            "to generate static assets before starting the API."
+        )
+
+
+_ensure_static_present()
 
 
 @asynccontextmanager
