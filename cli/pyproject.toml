@@ -9,7 +9,7 @@ description = "CLI for the boardgame recommender"
 requires-python = ">=3.11,<3.15"
 
 dependencies = [
-    "polars",
+    "polars-lts-cpu",
     "scikit-learn",
     "numpy",
     "scipy",

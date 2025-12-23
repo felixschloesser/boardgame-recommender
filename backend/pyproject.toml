@@ -13,7 +13,7 @@ dependencies = [
     "uvicorn",
     "pydantic",
     "sqlalchemy>=2.0",
-    "polars",
+    "polars-lts-cpu",
     "numpy",
     "scikit-learn",
     "types-requests>=2.32.4.20250913",
