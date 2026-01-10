@@ -123,6 +123,9 @@ Key environment knobs (already defaulted in the image):
 - `BOARDGAMES_PARQUET_PATH=/app/data/processed/boardgames.parquet`
 - `BOARDGAMES_EMBEDDINGS_DIR=/app/data/embeddings`
 - `BGG_ACCESS_TOKEN=<token>` (enable live metadata; omit to stay offline). Optional: `BGG_FETCH_ENABLED` to force on/off.
+- `PARTICIPANT_ASSIGNMENT_MODE` controls participant assignment: `RANDOM` (default), `FORCE_REFERENCES`, or `FORCE_FEATURES`. Set it in your environment or compose file (for example `PARTICIPANT_ASSIGNMENT_MODE=FORCE_REFERENCES`) to steer new participants without code changes.
+
+Study-group reporting note: "From <date>, new participants were assigned using mode <MODE> to stabilize group sizes."
 
 Health check: `GET /health`. The SPA and API share the same origin; reverse proxies can path-prefix the service without extra config.
 

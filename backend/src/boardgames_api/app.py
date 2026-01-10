@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from boardgames_api.domain.games.bgg_metadata import log_bgg_status
+from boardgames_api.domain.participants.service import get_study_group_mode
 from boardgames_api.domain.recommendations import routes as recommendation_routes
 from boardgames_api.http.errors.handlers import register_exception_handlers
 from boardgames_api.http.router import router as api_router
@@ -61,6 +62,11 @@ async def lifespan(_: FastAPI):
         )
     else:
         logger.info("RECOMMENDATION_OVERRIDE inactive")
+    mode = get_study_group_mode()
+    logger.info(
+        "PARTICIPANT_ASSIGNMENT_MODE=%s (controls participant assignment only)",
+        mode.name,
+    )
     log_bgg_status(logger)
     try:
         load_embedding()
